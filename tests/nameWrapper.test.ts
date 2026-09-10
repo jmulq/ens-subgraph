@@ -21,7 +21,7 @@ import {
   TransferSingle,
 } from "../src/types/NameWrapper/NameWrapper";
 import { Domain, WrappedDomain } from "../src/types/schema";
-import { concat, createEventID, ETH_NODE, i32ToBytes } from "../src/utils";
+import { createLegacyEventID, ETH_NODE } from "../src/utils";
 import { DEFAULT_OWNER, setEthOwner } from "./testUtils";
 
 beforeAll(() => {
@@ -68,25 +68,25 @@ describe("handleNameUnwrapped", () => {
     const labelhash =
       "0x9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658";
 
-    let domain = new Domain(Bytes.fromHexString(testEthNamehash));
+    let domain = new Domain(testEthNamehash);
     domain.name = "test.eth";
     domain.labelName = "test";
     domain.labelhash = Bytes.fromHexString(labelhash);
-    domain.parent = ETH_NODE;
+    domain.parent = ETH_NODE.toHexString();
     domain.subdomainCount = 0;
     domain.isMigrated = true;
     domain.createdAt = BigInt.fromI32(0);
-    domain.owner = Bytes.fromHexString(NAME_WRAPPER_ADDRESS);
-    domain.registrant = Bytes.fromHexString(NAME_WRAPPER_ADDRESS);
-    domain.wrappedOwner = Bytes.fromHexString(DEFAULT_OWNER);
+    domain.owner = NAME_WRAPPER_ADDRESS;
+    domain.registrant = NAME_WRAPPER_ADDRESS;
+    domain.wrappedOwner = DEFAULT_OWNER;
     domain.expiryDate = BigInt.fromI32(123456789);
     domain.save();
 
-    const wrappedDomain = new WrappedDomain(Bytes.fromHexString(testEthNamehash));
-    wrappedDomain.domain = Bytes.fromHexString(testEthNamehash);
+    const wrappedDomain = new WrappedDomain(testEthNamehash);
+    wrappedDomain.domain = testEthNamehash;
     wrappedDomain.expiryDate = BigInt.fromI32(123456789);
     wrappedDomain.fuses = 0;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.name = "test.eth";
     wrappedDomain.save();
 
@@ -107,25 +107,25 @@ describe("handleNameUnwrapped", () => {
     const labelhash =
       "0x678c189fde5058554d934d6af17e41750fa2a94b61371c5ea958a7595e146324";
 
-    let domain = new Domain(Bytes.fromHexString(subNamehash));
+    let domain = new Domain(subNamehash);
     domain.name = "cool.test.eth";
     domain.labelName = "cool";
     domain.labelhash = Bytes.fromHexString(labelhash);
-    domain.parent = Bytes.fromHexString(testEthNamehash);
+    domain.parent = testEthNamehash;
     domain.subdomainCount = 0;
     domain.isMigrated = true;
     domain.createdAt = BigInt.fromI32(0);
-    domain.owner = Bytes.fromHexString(NAME_WRAPPER_ADDRESS);
-    domain.registrant = Bytes.fromHexString(NAME_WRAPPER_ADDRESS);
-    domain.wrappedOwner = Bytes.fromHexString(DEFAULT_OWNER);
+    domain.owner = NAME_WRAPPER_ADDRESS;
+    domain.registrant = NAME_WRAPPER_ADDRESS;
+    domain.wrappedOwner = DEFAULT_OWNER;
     domain.expiryDate = BigInt.fromI32(123456789);
     domain.save();
 
-    const wrappedDomain = new WrappedDomain(Bytes.fromHexString(subNamehash));
-    wrappedDomain.domain = Bytes.fromHexString(subNamehash);
+    const wrappedDomain = new WrappedDomain(subNamehash);
+    wrappedDomain.domain = subNamehash;
     wrappedDomain.expiryDate = BigInt.fromI32(123456789);
     wrappedDomain.fuses = 0;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.name = "test.eth";
     wrappedDomain.save();
 
@@ -271,7 +271,7 @@ describe("handleFusesSet", () => {
     assert.notInStore("WrappedDomain", node);
     assert.notInStore("Domain", node);
 
-    let eventId = createEventID(event).toHexString();
+    let eventId = createLegacyEventID(event);
     assert.fieldEquals("FusesSet", eventId, "domain", node);
     assert.fieldEquals("FusesSet", eventId, "fuses", "1");
   });
@@ -279,21 +279,20 @@ describe("handleFusesSet", () => {
   test("bumps Domain.expiryDate to match once PARENT_CANNOT_CONTROL is burned", () => {
     const node =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
     domain.expiryDate = BigInt.fromI32(100);
     domain.save();
 
-    let wrappedDomain = new WrappedDomain(nodeBytes);
-    wrappedDomain.domain = nodeBytes;
+    let wrappedDomain = new WrappedDomain(node);
+    wrappedDomain.domain = node;
     wrappedDomain.expiryDate = BigInt.fromI32(500);
     wrappedDomain.fuses = 0;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.save();
 
     const event = createFusesSetEvent(node, PARENT_CANNOT_CONTROL);
@@ -308,21 +307,20 @@ describe("handleFusesSet", () => {
   test("does not downgrade Domain.expiryDate when the wrapped expiry is earlier", () => {
     const node =
       "0x6666666666666666666666666666666666666666666666666666666666666666";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
     domain.expiryDate = BigInt.fromI32(99999);
     domain.save();
 
-    let wrappedDomain = new WrappedDomain(nodeBytes);
-    wrappedDomain.domain = nodeBytes;
+    let wrappedDomain = new WrappedDomain(node);
+    wrappedDomain.domain = node;
     wrappedDomain.expiryDate = BigInt.fromI32(100);
     wrappedDomain.fuses = 0;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.save();
 
     const event = createFusesSetEvent(node, PARENT_CANNOT_CONTROL);
@@ -346,7 +344,7 @@ describe("handleExpiryExtended", () => {
     assert.notInStore("WrappedDomain", node);
     assert.notInStore("Domain", node);
 
-    let eventId = createEventID(event).toHexString();
+    let eventId = createLegacyEventID(event);
     assert.fieldEquals("ExpiryExtended", eventId, "domain", node);
     assert.fieldEquals("ExpiryExtended", eventId, "expiryDate", "999");
   });
@@ -354,21 +352,20 @@ describe("handleExpiryExtended", () => {
   test("bumps Domain.expiryDate for an already-PCC-burned WrappedDomain", () => {
     const node =
       "0x4444444444444444444444444444444444444444444444444444444444444444";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
     domain.expiryDate = BigInt.fromI32(100);
     domain.save();
 
-    let wrappedDomain = new WrappedDomain(nodeBytes);
-    wrappedDomain.domain = nodeBytes;
+    let wrappedDomain = new WrappedDomain(node);
+    wrappedDomain.domain = node;
     wrappedDomain.expiryDate = BigInt.fromI32(200);
     wrappedDomain.fuses = PARENT_CANNOT_CONTROL;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.save();
 
     const event = createExpiryExtendedEvent(node, BigInt.fromI32(1000));
@@ -381,21 +378,20 @@ describe("handleExpiryExtended", () => {
   test("still updates WrappedDomain.expiryDate but does not downgrade Domain.expiryDate", () => {
     const node =
       "0x7777777777777777777777777777777777777777777777777777777777777777";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
     domain.expiryDate = BigInt.fromI32(99999);
     domain.save();
 
-    let wrappedDomain = new WrappedDomain(nodeBytes);
-    wrappedDomain.domain = nodeBytes;
+    let wrappedDomain = new WrappedDomain(node);
+    wrappedDomain.domain = node;
     wrappedDomain.expiryDate = BigInt.fromI32(100);
     wrappedDomain.fuses = PARENT_CANNOT_CONTROL;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.save();
 
     const event = createExpiryExtendedEvent(node, BigInt.fromI32(500));
@@ -415,10 +411,9 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     const tokenId = BigInt.fromI32(111222333);
     const node =
       "0x0000000000000000000000000000000000000000000000000000000006a11e3d";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
@@ -444,9 +439,7 @@ describe("handleTransferSingle / handleTransferBatch", () => {
       Address.fromString(newOwner).toHexString()
     );
 
-    let eventId = Bytes.fromByteArray(
-      concat(createEventID(event), i32ToBytes(0))
-    ).toHexString();
+    let eventId = createLegacyEventID(event).concat("-0");
     assert.fieldEquals(
       "WrappedTransfer",
       eventId,
@@ -459,10 +452,9 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     const tokenId = BigInt.fromI32(222333444);
     const node =
       "0x000000000000000000000000000000000000000000000000000000000d408a04";
-    let nodeBytes = Bytes.fromHexString(node);
 
-    let domain = new Domain(nodeBytes);
-    domain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domain = new Domain(node);
+    domain.owner = DEFAULT_OWNER;
     domain.isMigrated = true;
     domain.subdomainCount = 0;
     domain.createdAt = BigInt.fromI32(0);
@@ -471,11 +463,11 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     // Real wrapped state, not the placeholder zeros makeWrappedTransfer uses
     // for a fresh mint -- this is what a real, already-wrapped name looks
     // like by the time it gets transferred again.
-    let wrappedDomain = new WrappedDomain(nodeBytes);
-    wrappedDomain.domain = nodeBytes;
+    let wrappedDomain = new WrappedDomain(node);
+    wrappedDomain.domain = node;
     wrappedDomain.expiryDate = BigInt.fromI32(999999);
     wrappedDomain.fuses = PARENT_CANNOT_CONTROL;
-    wrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    wrappedDomain.owner = DEFAULT_OWNER;
     wrappedDomain.save();
 
     const newOwner = "0xF0205A3A3b2A69De6Dbf7f01ED13B2108B2c4321";
@@ -514,15 +506,15 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     const nodeB =
       "0x000000000000000000000000000000000000000000000000000000002e5da4e7";
 
-    let domainA = new Domain(Bytes.fromHexString(nodeA));
-    domainA.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domainA = new Domain(nodeA);
+    domainA.owner = DEFAULT_OWNER;
     domainA.isMigrated = true;
     domainA.subdomainCount = 0;
     domainA.createdAt = BigInt.fromI32(0);
     domainA.save();
 
-    let domainB = new Domain(Bytes.fromHexString(nodeB));
-    domainB.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let domainB = new Domain(nodeB);
+    domainB.owner = DEFAULT_OWNER;
     domainB.isMigrated = true;
     domainB.subdomainCount = 0;
     domainB.createdAt = BigInt.fromI32(0);
@@ -548,12 +540,8 @@ describe("handleTransferSingle / handleTransferBatch", () => {
       Address.fromString(newOwner).toHexString()
     );
 
-    let eventIdA = Bytes.fromByteArray(
-      concat(createEventID(event), i32ToBytes(0))
-    ).toHexString();
-    let eventIdB = Bytes.fromByteArray(
-      concat(createEventID(event), i32ToBytes(1))
-    ).toHexString();
+    let eventIdA = createLegacyEventID(event).concat("-0");
+    let eventIdB = createLegacyEventID(event).concat("-1");
     assert.fieldEquals("WrappedTransfer", eventIdA, "domain", nodeA);
     assert.fieldEquals("WrappedTransfer", eventIdB, "domain", nodeB);
   });
@@ -566,15 +554,15 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     const existingNode =
       "0x0000000000000000000000000000000000000000000000000000000034fd0cc7";
 
-    let freshDomain = new Domain(Bytes.fromHexString(freshNode));
-    freshDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let freshDomain = new Domain(freshNode);
+    freshDomain.owner = DEFAULT_OWNER;
     freshDomain.isMigrated = true;
     freshDomain.subdomainCount = 0;
     freshDomain.createdAt = BigInt.fromI32(0);
     freshDomain.save();
 
-    let existingDomain = new Domain(Bytes.fromHexString(existingNode));
-    existingDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    let existingDomain = new Domain(existingNode);
+    existingDomain.owner = DEFAULT_OWNER;
     existingDomain.isMigrated = true;
     existingDomain.subdomainCount = 0;
     existingDomain.createdAt = BigInt.fromI32(0);
@@ -585,13 +573,11 @@ describe("handleTransferSingle / handleTransferBatch", () => {
     // very same batch call as an update to an existing row, proving the
     // per-index branching inside handleTransferBatch's loop doesn't leak
     // state between iterations.
-    let existingWrappedDomain = new WrappedDomain(
-      Bytes.fromHexString(existingNode)
-    );
-    existingWrappedDomain.domain = Bytes.fromHexString(existingNode);
+    let existingWrappedDomain = new WrappedDomain(existingNode);
+    existingWrappedDomain.domain = existingNode;
     existingWrappedDomain.expiryDate = BigInt.fromI32(555555);
     existingWrappedDomain.fuses = PARENT_CANNOT_CONTROL;
-    existingWrappedDomain.owner = Bytes.fromHexString(DEFAULT_OWNER);
+    existingWrappedDomain.owner = DEFAULT_OWNER;
     existingWrappedDomain.save();
 
     const newOwner = "0xF0205A3A3b2A69De6Dbf7f01ED13B2108B2c4321";

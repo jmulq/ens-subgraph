@@ -29,11 +29,10 @@ import {
 import {
   checkValidLabel,
   concat,
-  createEventID,
+  createLegacyEventID,
   createOrLoadAccount,
   createOrLoadDomain,
   ETH_NODE,
-  i32ToBytes,
   uint256ToByteArray,
 } from "./utils";
 
@@ -103,7 +102,7 @@ export function handleNameWrapped(event: NameWrappedEvent): void {
   domain.wrappedOwner = owner.id;
   domain.save();
 
-  let wrappedDomain = new WrappedDomain(node);
+  let wrappedDomain = new WrappedDomain(node.toHexString());
   wrappedDomain.domain = domain.id;
   wrappedDomain.expiryDate = expiryDate;
   wrappedDomain.fuses = fuses;
@@ -111,7 +110,7 @@ export function handleNameWrapped(event: NameWrappedEvent): void {
   wrappedDomain.name = name;
   wrappedDomain.save();
 
-  let nameWrappedEvent = new NameWrapped(createEventID(event));
+  let nameWrappedEvent = new NameWrapped(createLegacyEventID(event));
   nameWrappedEvent.domain = domain.id;
   nameWrappedEvent.name = name;
   nameWrappedEvent.fuses = fuses;
@@ -136,15 +135,15 @@ export function handleNameUnwrapped(event: NameUnwrappedEvent): void {
   // truthy guard and assign the boolean to a local first, never inline.
   let parentIsEth = false;
   if (domain.parent) {
-    parentIsEth = domain.parent!.equals(ETH_NODE);
+    parentIsEth = domain.parent! == ETH_NODE.toHexString();
   }
   if (domain.expiryDate && !parentIsEth) {
     domain.expiryDate = null;
   }
   domain.save();
 
-  let nameUnwrappedEvent = new NameUnwrapped(createEventID(event));
-  nameUnwrappedEvent.domain = node;
+  let nameUnwrappedEvent = new NameUnwrapped(createLegacyEventID(event));
+  nameUnwrappedEvent.domain = node.toHexString();
   nameUnwrappedEvent.owner = owner.id;
   nameUnwrappedEvent.blockNumber = blockNumber;
   nameUnwrappedEvent.transactionID = transactionID;
@@ -158,7 +157,7 @@ export function handleFusesSet(event: FusesSetEvent): void {
   let fuses = event.params.fuses;
   let blockNumber = event.block.number.toI32();
   let transactionID = event.transaction.hash;
-  let wrappedDomain = WrappedDomain.load(node);
+  let wrappedDomain = WrappedDomain.load(node.toHexString());
   if (wrappedDomain) {
     wrappedDomain.fuses = fuses.toI32();
     wrappedDomain.save();
@@ -170,8 +169,8 @@ export function handleFusesSet(event: FusesSetEvent): void {
       }
     }
   }
-  let fusesBurnedEvent = new FusesSet(createEventID(event));
-  fusesBurnedEvent.domain = node;
+  let fusesBurnedEvent = new FusesSet(createLegacyEventID(event));
+  fusesBurnedEvent.domain = node.toHexString();
   fusesBurnedEvent.fuses = fuses.toI32();
   fusesBurnedEvent.blockNumber = blockNumber;
   fusesBurnedEvent.transactionID = transactionID;
@@ -183,7 +182,7 @@ export function handleExpiryExtended(event: ExpiryExtendedEvent): void {
   let expiry = event.params.expiry;
   let blockNumber = event.block.number.toI32();
   let transactionID = event.transaction.hash;
-  let wrappedDomain = WrappedDomain.load(node);
+  let wrappedDomain = WrappedDomain.load(node.toHexString());
   if (wrappedDomain) {
     wrappedDomain.expiryDate = expiry;
     wrappedDomain.save();
@@ -195,8 +194,8 @@ export function handleExpiryExtended(event: ExpiryExtendedEvent): void {
       }
     }
   }
-  let expiryExtendedEvent = new ExpiryExtended(createEventID(event));
-  expiryExtendedEvent.domain = node;
+  let expiryExtendedEvent = new ExpiryExtended(createLegacyEventID(event));
+  expiryExtendedEvent.domain = node.toHexString();
   expiryExtendedEvent.expiryDate = expiry;
   expiryExtendedEvent.blockNumber = blockNumber;
   expiryExtendedEvent.transactionID = transactionID;
@@ -206,21 +205,21 @@ export function handleExpiryExtended(event: ExpiryExtendedEvent): void {
 function makeWrappedTransfer(
   blockNumber: i32,
   transactionID: Bytes,
-  eventID: Bytes,
+  eventID: string,
   node: BigInt,
   to: Bytes
 ): void {
   const _to = createOrLoadAccount(to);
   // Reuses uint256ToByteArray instead of the old manual
-  // "0x" + node.toHex().slice(2).padStart(64, "0") string surgery (fix plan
-  // Phase 5 Decision 6) — same 32-byte big-endian value, no reimplementation.
+  // "0x" + node.toHex().slice(2).padStart(64, "0") string surgery — same
+  // 32-byte big-endian value, no reimplementation.
   const namehash = Bytes.fromByteArray(uint256ToByteArray(node));
   const domain = createOrLoadDomain(namehash);
-  let wrappedDomain = WrappedDomain.load(namehash);
+  let wrappedDomain = WrappedDomain.load(namehash.toHexString());
   // new registrations emit the Transfer` event before the NameWrapped event
   // so we need to create the WrappedDomain entity here
   if (wrappedDomain == null) {
-    wrappedDomain = new WrappedDomain(namehash);
+    wrappedDomain = new WrappedDomain(namehash.toHexString());
     wrappedDomain.domain = domain.id;
 
     // placeholders until we get the NameWrapped event
@@ -243,7 +242,7 @@ export function handleTransferSingle(event: TransferSingleEvent): void {
   makeWrappedTransfer(
     event.block.number.toI32(),
     event.transaction.hash,
-    Bytes.fromByteArray(concat(createEventID(event), i32ToBytes(0))),
+    createLegacyEventID(event).concat("-0"),
     event.params.id,
     event.params.to
   );
@@ -258,7 +257,7 @@ export function handleTransferBatch(event: TransferBatchEvent): void {
     makeWrappedTransfer(
       blockNumber,
       transactionID,
-      Bytes.fromByteArray(concat(createEventID(event), i32ToBytes(i))),
+      createLegacyEventID(event).concat("-").concat(i.toString()),
       ids[i],
       to
     );

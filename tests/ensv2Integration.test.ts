@@ -471,8 +471,8 @@ test("Phase 6 migration correction survives unrelated cross-file activity in the
   let domainId = pathNamehash(ethBaseNamehash, labelHash).toHexString();
   let registrationId = labelHash.toHexString();
 
-  let graveyard = Bytes.fromHexString(GRAVEYARD);
-  let domain = new Domain(Bytes.fromHexString(domainId));
+  let graveyard = GRAVEYARD;
+  let domain = new Domain(domainId);
   domain.owner = graveyard;
   domain.registrant = graveyard;
   domain.wrappedOwner = graveyard;
@@ -481,15 +481,15 @@ test("Phase 6 migration correction survives unrelated cross-file activity in the
   domain.createdAt = BigInt.fromI32(0);
   domain.save();
 
-  let registration = new Registration(Bytes.fromHexString(registrationId));
-  registration.domain = Bytes.fromHexString(domainId);
+  let registration = new Registration(registrationId);
+  registration.domain = domainId;
   registration.registrationDate = BigInt.fromI32(0);
   registration.expiryDate = BigInt.fromI32(1000000000);
   registration.registrant = graveyard;
   registration.save();
 
-  let wrappedDomain = new WrappedDomain(Bytes.fromHexString(domainId));
-  wrappedDomain.domain = Bytes.fromHexString(domainId);
+  let wrappedDomain = new WrappedDomain(domainId);
+  wrappedDomain.domain = domainId;
   wrappedDomain.expiryDate = BigInt.fromI32(1000000000);
   wrappedDomain.fuses = 65536; // PARENT_CANNOT_CONTROL — "locked"
   wrappedDomain.owner = graveyard;

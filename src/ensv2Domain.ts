@@ -12,7 +12,7 @@
 // v1 system, not something to overwrite). wrappedOwner/registrant are
 // different — they're what real consumers read to find "who controls this
 // name" — so those get corrected, domain.owner does not.
-import { BigInt, Bytes, log } from "@graphprotocol/graph-ts";
+import { BigInt, log } from "@graphprotocol/graph-ts";
 import { checkValidLabel, ETH_NODE } from "./utils";
 import { getEthRegistryAddress, getV2GracePeriod } from "./ensv2Constants";
 import { pathNamehash, registryNamespaceIndexId } from "./ensv2Utils";
@@ -33,7 +33,7 @@ import { LabelRegistered } from "./types/RootRegistry/PermissionedRegistry";
 // Read-only mirror of materializePathsForSlot's namespace loop; ENSv2NameSlot
 // deliberately has no direct Domain/namehash field of its own, only
 // labelhash, so this has to be recomputed rather than stored.
-export function getEthDomainId(slot: ENSv2NameSlot): Bytes | null {
+export function getEthDomainId(slot: ENSv2NameSlot): string | null {
   let registry = ENSv2Registry.load(slot.registry);
   if (registry == null) {
     return null;
@@ -77,9 +77,9 @@ export function getEthDomainId(slot: ENSv2NameSlot): Bytes | null {
 // Re-checks WrappedDomain existence fresh every call rather than caching the
 // original classification.
 export function correctMigratedLegacyOwner(
-  domainId: Bytes,
-  registrationId: Bytes,
-  ownerId: Bytes
+  domainId: string,
+  registrationId: string,
+  ownerId: string
 ): void {
   let wrappedDomain = WrappedDomain.load(domainId);
   if (wrappedDomain != null) {
@@ -113,9 +113,9 @@ export function correctMigratedLegacyOwner(
 // needed here the way correctMigratedLegacyOwner has: a v2-native name has
 // no legacy NameWrapper-wrapped concept to detect.
 export function updateEthDomainOwner(
-  domainId: Bytes,
-  registrationId: Bytes,
-  ownerId: Bytes
+  domainId: string,
+  registrationId: string,
+  ownerId: string
 ): void {
   let domain = Domain.load(domainId);
   if (domain != null) {
@@ -136,14 +136,14 @@ function syncEthRegistration(
   event: LabelRegistered,
   isV1Migration: boolean
 ): void {
-  let id = slot.labelhash;
+  let id = slot.labelhash.toHexString();
   let registration = Registration.load(id);
   let isNewRegistration = registration == null;
   if (registration == null) {
     registration = new Registration(id);
     registration.registrationDate = event.block.timestamp;
   }
-  registration.domain = path.id;
+  registration.domain = path.id.toHexString();
   let slotExpiryDate = slot.expiryDate;
   if (slotExpiryDate) {
     registration.expiryDate = slotExpiryDate!;
@@ -184,10 +184,10 @@ export function projectPathToDomain(
     return;
   }
 
-  let domain = Domain.load(path.id);
+  let domain = Domain.load(path.id.toHexString());
   let isNewDomain = domain == null;
   if (domain == null) {
-    domain = new Domain(path.id);
+    domain = new Domain(path.id.toHexString());
     domain.createdAt = event.block.timestamp;
     domain.subdomainCount = 0;
   }
@@ -243,7 +243,7 @@ export function projectPathToDomain(
   if (isEth) {
     syncEthRegistration(slot, path, event, isV1Migration);
     if (isV1Migration) {
-      correctMigratedLegacyOwner(domain.id, slot.labelhash, ownerId!);
+      correctMigratedLegacyOwner(domain.id, slot.labelhash.toHexString(), ownerId!);
     }
   }
 }

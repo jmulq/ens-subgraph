@@ -32,7 +32,7 @@ import {
   NameRenewed as UnwrappedEthRegistrarController_NameRenewed,
 } from "../src/types/UnwrappedEthRegistrarController/UnwrappedEthRegistrarController";
 import { NameRegistered as WrappedEthRegistrarController_NameRegistered } from "../src/types/WrappedEthRegistrarController/WrappedEthRegistrarController";
-import { concat, createEventID, ETH_NODE } from "../src/utils";
+import { concat, createLegacyEventID, ETH_NODE } from "../src/utils";
 import { createNewOwnerEvent, DEFAULT_OWNER, setEthOwner } from "./testUtils";
 
 describe("legacy/wrapped controller", () => {
@@ -148,7 +148,7 @@ describe("legacy/wrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
 
     // set labelName to null because handleNameRegistered sets it to a mocked value of "default"
     // which comes from ens.nameByHash()
@@ -164,7 +164,7 @@ describe("legacy/wrapped controller", () => {
       );
     handleNameRegisteredByWrappedController(nameRegisteredByControllerEvent);
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
 
     assert.assertNull(fetchedRegistration.labelName);
   };
@@ -243,7 +243,7 @@ describe("legacy/wrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
 
     fetchedRegistration.labelName = "eth";
     fetchedRegistration.save();
@@ -257,7 +257,7 @@ describe("legacy/wrapped controller", () => {
       );
     handleNameRegisteredByWrappedController(nameRegisteredByControllerEvent);
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
 
     assert.assertTrue(fetchedRegistration.labelName == label);
   });
@@ -435,7 +435,7 @@ describe("unwrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
 
     // set labelName to null because handleNameRegistered sets it to a mocked value of "default"
     // which comes from ens.nameByHash()
@@ -455,7 +455,7 @@ describe("unwrapped controller", () => {
       nameRegisteredByUnwrappedControllerEvent
     );
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
 
     assert.assertNull(fetchedRegistration.labelName);
   };
@@ -534,7 +534,7 @@ describe("unwrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
 
     fetchedRegistration.labelName = "eth";
     fetchedRegistration.save();
@@ -552,7 +552,7 @@ describe("unwrapped controller", () => {
       nameRegisteredByUnwrappedControllerEvent
     );
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
 
     assert.assertTrue(fetchedRegistration.labelName == label);
     assert.assertTrue(
@@ -582,7 +582,7 @@ describe("unwrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
 
     fetchedRegistration.labelName = "eth";
     fetchedRegistration.save();
@@ -601,7 +601,7 @@ describe("unwrapped controller", () => {
       nameRegisteredByUnwrappedControllerEvent
     );
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(fetchedRegistration.labelName == label);
     assert.assertTrue(
       fetchedRegistration.cost!.equals(BigInt.fromString("1000000000"))
@@ -619,7 +619,7 @@ describe("unwrapped controller", () => {
       nameRenewedByUnwrappedControllerEvent
     );
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(fetchedRegistration.labelName == label);
     assert.assertTrue(
       fetchedRegistration.cost!.equals(BigInt.fromString("2000000000"))
@@ -648,7 +648,7 @@ describe("unwrapped controller", () => {
     );
     handleNameRegistered(newRegistrationEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
     fetchedRegistration.labelName = null;
     fetchedRegistration.cost = BigInt.fromString("1000000000");
     fetchedRegistration.save();
@@ -665,7 +665,7 @@ describe("unwrapped controller", () => {
       nameRenewedByUnwrappedControllerEvent
     );
 
-    fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(
       fetchedRegistration.cost!.equals(BigInt.fromString("1000000000"))
     );
@@ -851,19 +851,19 @@ describe("BaseRegistrar's own NameRenewed/Transfer, and LegacyEthRegistrarContro
     const renewedEvent = createNameRenewedEvent(labelhashAsInt, "1620000000");
     handleNameRenewed(renewedEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(
       fetchedRegistration.expiryDate.equals(BigInt.fromString("1620000000"))
     );
 
     // Domain.expiryDate includes the 90-day grace period, matching
     // handleNameRegistered's own convention for the same field.
-    let fetchedDomain = Domain.load(domainId)!;
+    let fetchedDomain = Domain.load(domainId.toHexString())!;
     assert.assertTrue(
       fetchedDomain.expiryDate!.equals(BigInt.fromString("1627776000"))
     );
 
-    let eventId = createEventID(renewedEvent).toHexString();
+    let eventId = createLegacyEventID(renewedEvent);
     assert.fieldEquals(
       "NameRenewed",
       eventId,
@@ -903,11 +903,11 @@ describe("BaseRegistrar's own NameRenewed/Transfer, and LegacyEthRegistrarContro
     // The second renewal's absolute expiry must win outright -- expiryDate
     // is always a flat overwrite from the event's own value, not additive,
     // so two renewals must not double-count anything.
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(
       fetchedRegistration.expiryDate.equals(BigInt.fromString("1630000000"))
     );
-    let fetchedDomain = Domain.load(domainId)!;
+    let fetchedDomain = Domain.load(domainId.toHexString())!;
     assert.assertTrue(
       fetchedDomain.expiryDate!.equals(BigInt.fromString("1637776000"))
     );
@@ -958,7 +958,7 @@ describe("BaseRegistrar's own NameRenewed/Transfer, and LegacyEthRegistrarContro
       Address.fromString(newOwner).toHexString()
     );
 
-    let eventId = createEventID(transferEvent).toHexString();
+    let eventId = createLegacyEventID(transferEvent);
     assert.fieldEquals("NameTransferred", eventId, "newOwner", Address.fromString(newOwner).toHexString());
 
     // A second, later transfer on the same already-registered name -- a
@@ -1030,7 +1030,7 @@ describe("BaseRegistrar's own NameRenewed/Transfer, and LegacyEthRegistrarContro
     );
     handleNameRegisteredByLegacyController(legacyEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(fetchedRegistration.labelName == label);
     assert.assertTrue(
       fetchedRegistration.cost!.equals(BigInt.fromString("1000000000"))
@@ -1127,7 +1127,7 @@ describe("BaseRegistrar's own NameRenewed/Transfer, and LegacyEthRegistrarContro
     );
     handleNameRenewedByLegacyController(legacyRenewedEvent);
 
-    let fetchedRegistration = Registration.load(Bytes.fromHexString(labelhash))!;
+    let fetchedRegistration = Registration.load(labelhash)!;
     assert.assertTrue(fetchedRegistration.labelName == label);
     assert.assertTrue(
       fetchedRegistration.cost!.equals(BigInt.fromString("2000000000"))

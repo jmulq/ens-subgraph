@@ -292,7 +292,7 @@ export function handleExpiryUpdated(event: ExpiryUpdated): void {
   // v1-derived values — so do nothing there.
   let isEth = slot.registry.equals(getEthRegistryAddress());
   if (isEth && slot.status == "REGISTERED") {
-    let registration = Registration.load(slot.labelhash);
+    let registration = Registration.load(slot.labelhash.toHexString());
     if (registration != null) {
       registration.expiryDate = event.params.newExpiry;
       registration.save();
@@ -544,9 +544,9 @@ function makeTokenTransfer(
         let domainId = getEthDomainId(slot);
         if (domainId) {
           if (slot.migratedFromV1) {
-            correctMigratedLegacyOwner(domainId!, slot.labelhash, toAccount.id);
+            correctMigratedLegacyOwner(domainId!, slot.labelhash.toHexString(), toAccount.id);
           } else {
-            updateEthDomainOwner(domainId!, slot.labelhash, toAccount.id);
+            updateEthDomainOwner(domainId!, slot.labelhash.toHexString(), toAccount.id);
           }
         }
       }

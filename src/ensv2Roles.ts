@@ -37,11 +37,16 @@ export function processEACRolesChanged(
   let contractId: Bytes = contract;
   let accountEntity = createOrLoadAccount(account);
 
-  // Fixed-width concatenation, no delimiter needed (fix plan Phase 5
-  // Decision 1): contract/account are 20-byte addresses, resource is a
-  // 32-byte big-endian BigInt.
+  // Fixed-width concatenation, no delimiter needed: contract/account are
+  // 20-byte addresses, resource is a 32-byte big-endian BigInt.
+  // accountEntity.id is String (Account.id, issue #8) — re-encoded back to
+  // the 20-byte address it represents so this id (itself still Bytes, an
+  // ENSv2-native entity) keeps the same encoding as before the revert.
   let id = Bytes.fromByteArray(
-    concat(concat(contractId, uint256ToByteArray(resource)), accountEntity.id)
+    concat(
+      concat(contractId, uint256ToByteArray(resource)),
+      Bytes.fromHexString(accountEntity.id)
+    )
   );
   let assignment = ENSv2RoleAssignment.load(id);
   if (assignment == null) {

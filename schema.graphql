@@ -1,6 +1,6 @@
 type Domain @entity(immutable: false) {
   "The namehash of the name"
-  id: Bytes!
+  id: ID!
   "The human readable name, if known. Unknown portions replaced with hash in square brackets (eg, foo.[1234].eth)"
   name: String
   "The human readable label name (imported from CSV), if known"
@@ -47,7 +47,7 @@ type Domain @entity(immutable: false) {
 
 interface DomainEvent {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -58,7 +58,7 @@ interface DomainEvent {
 
 type Transfer implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -71,7 +71,7 @@ type Transfer implements DomainEvent @entity(immutable: true) {
 
 type NewOwner implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The parent domain of the domain name associated with the event"
   parentDomain: Domain!
   "The domain name associated with the event"
@@ -86,7 +86,7 @@ type NewOwner implements DomainEvent @entity(immutable: true) {
 
 type NewResolver implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -99,7 +99,7 @@ type NewResolver implements DomainEvent @entity(immutable: true) {
 
 type NewTTL implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -112,7 +112,7 @@ type NewTTL implements DomainEvent @entity(immutable: true) {
 
 type WrappedTransfer implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -125,7 +125,7 @@ type WrappedTransfer implements DomainEvent @entity(immutable: true) {
 
 type NameWrapped implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the wrapped domain"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the wrapped domain"
   domain: Domain!
   "The block number at which the wrapped domain was wrapped"
@@ -144,7 +144,7 @@ type NameWrapped implements DomainEvent @entity(immutable: true) {
 
 type NameUnwrapped implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -157,7 +157,7 @@ type NameUnwrapped implements DomainEvent @entity(immutable: true) {
 
 type FusesSet implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -170,7 +170,7 @@ type FusesSet implements DomainEvent @entity(immutable: true) {
 
 type ExpiryExtended implements DomainEvent @entity(immutable: true) {
   "The unique identifier of the event"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the event"
   domain: Domain!
   "The block number at which the event occurred"
@@ -183,7 +183,7 @@ type ExpiryExtended implements DomainEvent @entity(immutable: true) {
 
 type Registration @entity(immutable: false) {
   "The unique identifier of the registration"
-  id: Bytes!
+  id: ID!
   "The domain name associated with the registration"
   domain: Domain!
   "The registration date of the domain"
@@ -202,7 +202,7 @@ type Registration @entity(immutable: false) {
 
 interface RegistrationEvent {
   "The unique identifier of the registration event"
-  id: Bytes!
+  id: ID!
   "The registration associated with the event"
   registration: Registration!
   "The block number of the event"
@@ -213,7 +213,7 @@ interface RegistrationEvent {
 
 type NameRegistered implements RegistrationEvent @entity(immutable: true) {
   "The unique identifier of the NameRegistered event"
-  id: Bytes!
+  id: ID!
   "The registration associated with the event"
   registration: Registration!
   "The block number of the event"
@@ -228,7 +228,7 @@ type NameRegistered implements RegistrationEvent @entity(immutable: true) {
 
 type NameRenewed implements RegistrationEvent @entity(immutable: true) {
   "The unique identifier of the NameRenewed event"
-  id: Bytes!
+  id: ID!
   "The registration associated with the event"
   registration: Registration!
   "The block number of the event"
@@ -241,7 +241,7 @@ type NameRenewed implements RegistrationEvent @entity(immutable: true) {
 
 type NameTransferred implements RegistrationEvent @entity(immutable: true) {
   "The ID of the event"
-  id: Bytes!
+  id: ID!
   "The registration associated with the event"
   registration: Registration!
   "The block number of the event"
@@ -254,7 +254,7 @@ type NameTransferred implements RegistrationEvent @entity(immutable: true) {
 
 type WrappedDomain @entity(immutable: false) {
   "unique identifier for each instance of the WrappedDomain entity"
-  id: Bytes!
+  id: ID!
   "The domain that is wrapped by this WrappedDomain"
   domain: Domain!
   "The expiry date of the wrapped domain"
@@ -269,7 +269,7 @@ type WrappedDomain @entity(immutable: false) {
 
 type Account @entity(immutable: false) {
   "The unique identifier for the account"
-  id: Bytes!
+  id: ID!
   "The domains owned by the account"
   domains: [Domain!]! @derivedFrom(field: "owner")
   "The WrappedDomains owned by the account"
@@ -286,7 +286,7 @@ extend type Account {
 
 type Resolver @entity(immutable: false) {
   "The unique identifier for this resolver, which is a concatenation of the resolver address and the domain namehash"
-  id: Bytes!
+  id: ID!
   "The domain that this resolver is associated with"
   domain: Domain
   "The address of the resolver contract"
@@ -305,7 +305,7 @@ type Resolver @entity(immutable: false) {
 
 interface ResolverEvent {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "The block number that the event occurred on"
@@ -316,7 +316,7 @@ interface ResolverEvent {
 
 type AddrChanged implements ResolverEvent @entity(immutable: true) {
   "Unique identifier for this event"
-  id: Bytes!
+  id: ID!
   "The resolver associated with this event"
   resolver: Resolver!
   "The block number at which this event occurred"
@@ -329,7 +329,7 @@ type AddrChanged implements ResolverEvent @entity(immutable: true) {
 
 type MulticoinAddrChanged implements ResolverEvent @entity(immutable: true) {
   "Unique identifier for the event"
-  id: Bytes!
+  id: ID!
   "Resolver associated with this event"
   resolver: Resolver!
   "Block number in which this event was emitted"
@@ -344,7 +344,7 @@ type MulticoinAddrChanged implements ResolverEvent @entity(immutable: true) {
 
 type NameChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "Block number where event occurred"
@@ -357,7 +357,7 @@ type NameChanged implements ResolverEvent @entity(immutable: true) {
 
 type AbiChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "The block number at which the event was emitted"
@@ -370,7 +370,7 @@ type AbiChanged implements ResolverEvent @entity(immutable: true) {
 
 type PubkeyChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "Block number of the Ethereum block where the event occurred"
@@ -385,7 +385,7 @@ type PubkeyChanged implements ResolverEvent @entity(immutable: true) {
 
 type TextChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "Block number of the Ethereum block in which the event occurred"
@@ -400,7 +400,7 @@ type TextChanged implements ResolverEvent @entity(immutable: true) {
 
 type ContenthashChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "The block number where the event occurred"
@@ -413,7 +413,7 @@ type ContenthashChanged implements ResolverEvent @entity(immutable: true) {
 
 type InterfaceChanged implements ResolverEvent @entity(immutable: true) {
   "Concatenation of block number and log ID"
-  id: Bytes!
+  id: ID!
   "Used to derive relationships to Resolvers"
   resolver: Resolver!
   "The block number in which the event occurred"
@@ -428,7 +428,7 @@ type InterfaceChanged implements ResolverEvent @entity(immutable: true) {
 
 type AuthorisationChanged implements ResolverEvent @entity(immutable: true) {
   "Unique identifier for this event"
-  id: Bytes!
+  id: ID!
   "The resolver associated with this event"
   resolver: Resolver!
   "The block number at which the event occurred"
@@ -445,7 +445,7 @@ type AuthorisationChanged implements ResolverEvent @entity(immutable: true) {
 
 type VersionChanged implements ResolverEvent @entity(immutable: true) {
   "Unique identifier for this event"
-  id: Bytes!
+  id: ID!
   "The resolver associated with this event"
   resolver: Resolver!
   "The block number at which the event occurred"

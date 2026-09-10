@@ -1,5 +1,5 @@
 import { Address, Bytes } from "@graphprotocol/graph-ts";
-import { concat, createEventID } from "./utils";
+import { createLegacyEventID } from "./utils";
 
 import {
   ABIChanged as ABIChangedEvent,
@@ -32,28 +32,28 @@ import {
 } from "./types/schema";
 
 export function handleAddrChanged(event: AddrChangedEvent): void {
-  let account = new Account(event.params.a);
+  let account = new Account(event.params.a.toHexString());
   account.save();
 
   let resolver = new Resolver(
     createResolverID(event.params.node, event.address)
   );
-  resolver.domain = event.params.node;
+  resolver.domain = event.params.node.toHexString();
   resolver.address = event.address;
-  resolver.addr = event.params.a;
+  resolver.addr = event.params.a.toHexString();
   resolver.save();
 
-  let domain = Domain.load(event.params.node);
-  if (domain && domain.resolver && domain.resolver!.equals(resolver.id)) {
-    domain.resolvedAddress = event.params.a;
+  let domain = Domain.load(event.params.node.toHexString());
+  if (domain && domain.resolver && domain.resolver! == resolver.id) {
+    domain.resolvedAddress = event.params.a.toHexString();
     domain.save();
   }
 
-  let resolverEvent = new AddrChanged(createEventID(event));
+  let resolverEvent = new AddrChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
-  resolverEvent.addr = event.params.a;
+  resolverEvent.addr = event.params.a.toHexString();
   resolverEvent.save();
 }
 
@@ -73,7 +73,7 @@ export function handleMulticoinAddrChanged(event: AddressChangedEvent): void {
     }
   }
 
-  let resolverEvent = new MulticoinAddrChanged(createEventID(event));
+  let resolverEvent = new MulticoinAddrChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -87,7 +87,7 @@ export function handleNameChanged(event: NameChangedEvent): void {
 
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
-  let resolverEvent = new NameChanged(createEventID(event));
+  let resolverEvent = new NameChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -98,7 +98,7 @@ export function handleNameChanged(event: NameChangedEvent): void {
 export function handleABIChanged(event: ABIChangedEvent): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
-  let resolverEvent = new AbiChanged(createEventID(event));
+  let resolverEvent = new AbiChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -109,7 +109,7 @@ export function handleABIChanged(event: ABIChangedEvent): void {
 export function handlePubkeyChanged(event: PubkeyChangedEvent): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
-  let resolverEvent = new PubkeyChanged(createEventID(event));
+  let resolverEvent = new PubkeyChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -134,7 +134,7 @@ export function handleTextChanged(event: TextChangedEvent): void {
     }
   }
 
-  let resolverEvent = new TextChanged(createEventID(event));
+  let resolverEvent = new TextChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -160,7 +160,7 @@ export function handleTextChangedWithValue(
     }
   }
 
-  let resolverEvent = new TextChanged(createEventID(event));
+  let resolverEvent = new TextChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -174,7 +174,7 @@ export function handleContentHashChanged(event: ContenthashChangedEvent): void {
   resolver.contentHash = event.params.hash;
   resolver.save();
 
-  let resolverEvent = new ContenthashChanged(createEventID(event));
+  let resolverEvent = new ContenthashChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -185,7 +185,7 @@ export function handleContentHashChanged(event: ContenthashChangedEvent): void {
 export function handleInterfaceChanged(event: InterfaceChangedEvent): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
-  let resolverEvent = new InterfaceChanged(createEventID(event));
+  let resolverEvent = new InterfaceChanged(createLegacyEventID(event));
   resolverEvent.resolver = resolver.id;
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
@@ -199,7 +199,7 @@ export function handleAuthorisationChanged(
 ): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
-  let resolverEvent = new AuthorisationChanged(createEventID(event));
+  let resolverEvent = new AuthorisationChanged(createLegacyEventID(event));
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
   resolverEvent.resolver = resolver.id;
@@ -210,15 +210,15 @@ export function handleAuthorisationChanged(
 }
 
 export function handleVersionChanged(event: VersionChangedEvent): void {
-  let resolverEvent = new VersionChanged(createEventID(event));
+  let resolverEvent = new VersionChanged(createLegacyEventID(event));
   resolverEvent.blockNumber = event.block.number.toI32();
   resolverEvent.transactionID = event.transaction.hash;
   resolverEvent.resolver = createResolverID(event.params.node, event.address);
   resolverEvent.version = event.params.newVersion;
   resolverEvent.save();
 
-  let domain = Domain.load(event.params.node);
-  if (domain && domain.resolver && domain.resolver!.equals(resolverEvent.resolver)) {
+  let domain = Domain.load(event.params.node.toHexString());
+  if (domain && domain.resolver && domain.resolver! == resolverEvent.resolver) {
     domain.resolvedAddress = null;
     domain.save();
   }
@@ -240,7 +240,7 @@ function getOrCreateResolver(
   let resolver = Resolver.load(id);
   if (resolver == null) {
     resolver = new Resolver(id);
-    resolver.domain = node;
+    resolver.domain = node.toHexString();
     resolver.address = address;
     if (saveOnNew) {
       resolver.save();
@@ -249,8 +249,6 @@ function getOrCreateResolver(
   return resolver as Resolver;
 }
 
-// Fixed-width concatenation, no delimiter needed: resolver address is
-// always 20 bytes, node is always 32 bytes (fix plan Phase 5 Decision 1).
-export function createResolverID(node: Bytes, resolver: Address): Bytes {
-  return Bytes.fromByteArray(concat(resolver, node));
+export function createResolverID(node: Bytes, resolver: Address): string {
+  return resolver.toHexString().concat("-").concat(node.toHexString());
 }

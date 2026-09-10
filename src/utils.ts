@@ -1,5 +1,5 @@
 // Import types and APIs from graph-ts
-import { Address, BigInt, ByteArray, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
+import { BigInt, ByteArray, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import { Account, Domain } from "./types/schema";
 
 // Fixed-width Bytes concatenation, no delimiter needed: block.number and
@@ -15,17 +15,32 @@ export function createEventID(event: ethereum.Event): Bytes {
   );
 }
 
+// String-id counterpart to createEventID, restored for the legacy
+// ENSv1-consumer-facing event entities alongside the id revert (issue #8) —
+// ENSv2-native event entities keep using createEventID (Bytes) above.
+export function createLegacyEventID(event: ethereum.Event): string {
+  return event.block.number
+    .toString()
+    .concat("-")
+    .concat(event.logIndex.toString());
+}
+
+// Bytes-typed: still used for raw Bytes32/keccak256 operations (ethRegistrar.ts's
+// rootNode, ensv2Domain.ts/ensv2Discovery.ts's ENSv2 baseNamehash comparisons),
+// which never stopped being Bytes-typed even where the legacy entity ids
+// referencing them (Domain.id etc.) reverted to String (issue #8).
 export const ETH_NODE = Bytes.fromHexString(
   "0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae"
 );
 export const ROOT_NODE = Bytes.fromHexString(
   "0x0000000000000000000000000000000000000000000000000000000000000000"
 );
-// Address.zero() replaces both the old EMPTY_ADDRESS (string) and
-// EMPTY_ADDRESS_BYTEARRAY (ByteArray) constants — both were the same 20
-// zero bytes under two different types, only needed because ids used to be
-// strings; Bytes ids make the distinction unnecessary.
-export const EMPTY_ADDRESS = Address.zero();
+// Two distinct EMPTY_ADDRESS constants, restored alongside the legacy id
+// revert (issue #8): EMPTY_ADDRESS (string) compares against legacy
+// String-typed relation fields (Domain.owner, NewResolver.resolver, ...);
+// EMPTY_ADDRESS_BYTEARRAY compares against raw Bytes/Address event params.
+export const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000";
+export const EMPTY_ADDRESS_BYTEARRAY = new ByteArray(20);
 
 // Helper for concatenating two byte arrays
 export function concat(a: ByteArray, b: ByteArray): ByteArray {
@@ -69,10 +84,15 @@ export function i32ToBytes(i: i32): ByteArray {
   return changetype<ByteArray>(out);
 }
 
+// Takes a Bytes address (every caller already has one — either a raw
+// Address event param or an ENSv2 entity field) so the many ENSv2-side call
+// sites didn't need touching when Account.id reverted to String (issue #8);
+// the hex-string conversion happens once, here.
 export function createOrLoadAccount(address: Bytes): Account {
-  let account = Account.load(address);
+  let id = address.toHexString();
+  let account = Account.load(id);
   if (account == null) {
-    account = new Account(address);
+    account = new Account(id);
     account.save();
   }
 
@@ -80,9 +100,10 @@ export function createOrLoadAccount(address: Bytes): Account {
 }
 
 export function createOrLoadDomain(node: Bytes): Domain {
-  let domain = Domain.load(node);
+  let id = node.toHexString();
+  let domain = Domain.load(id);
   if (domain == null) {
-    domain = new Domain(node);
+    domain = new Domain(id);
     domain.save();
   }
 

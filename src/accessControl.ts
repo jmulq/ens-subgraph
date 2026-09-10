@@ -23,8 +23,15 @@ export function processApprovalForAll(
 ): void {
   let ownerAccount = createOrLoadAccount(owner);
   let operatorAccount = createOrLoadAccount(operator);
+  // ownerAccount.id/operatorAccount.id are String (Account.id, issue #8) —
+  // re-encoded back to the 20-byte address they represent so this
+  // OperatorApproval id (itself still Bytes, a new entity with no v1
+  // consumers) keeps the same fixed-width, no-delimiter concatenation.
   let id = Bytes.fromByteArray(
-    concat(concat(contract, ownerAccount.id), operatorAccount.id)
+    concat(
+      concat(contract, Bytes.fromHexString(ownerAccount.id)),
+      Bytes.fromHexString(operatorAccount.id)
+    )
   );
 
   let entity = OperatorApproval.load(id);

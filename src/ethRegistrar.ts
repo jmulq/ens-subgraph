@@ -11,7 +11,7 @@ import {
 import {
   checkValidLabel,
   concat,
-  createEventID,
+  createLegacyEventID,
   ETH_NODE,
   uint256ToByteArray,
 } from "./utils";
@@ -64,12 +64,12 @@ const GRACE_PERIOD_SECONDS = BigInt.fromI32(7776000); // 90 days
 let rootNode: Bytes = ETH_NODE;
 
 export function handleNameRegistered(event: NameRegisteredEvent): void {
-  let account = new Account(event.params.owner);
+  let account = new Account(event.params.owner.toHexString());
   account.save();
 
   let label = uint256ToByteArray(event.params.id);
-  let labelBytes = Bytes.fromByteArray(label);
-  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label)));
+  let labelHex = Bytes.fromByteArray(label).toHexString();
+  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label))).toHexString();
   let domain = Domain.load(domainId);
   if (domain == null) {
     // Expected to always exist by the time BaseRegistrar's own
@@ -77,11 +77,11 @@ export function handleNameRegistered(event: NameRegisteredEvent): void {
     // emitted earlier in the same tx) — but testnets can be reset/redeployed
     // without every historical NewOwner being indexed, so guard rather than
     // crash the whole subgraph on a single irregular name.
-    log.warning("handleNameRegistered: no Domain for {}, skipping", [domainId.toHexString()]);
+    log.warning("handleNameRegistered: no Domain for {}, skipping", [domainId]);
     return;
   }
 
-  let registration = new Registration(labelBytes);
+  let registration = new Registration(labelHex);
   registration.domain = domain.id;
   registration.registrationDate = event.block.timestamp;
   registration.expiryDate = event.params.expires;
@@ -98,7 +98,7 @@ export function handleNameRegistered(event: NameRegisteredEvent): void {
   // WrappedDomain with the correct new owner.
   domain.wrappedOwner = null;
   if (WrappedDomain.load(domain.id) != null) {
-    store.remove("WrappedDomain", domain.id.toHexString());
+    store.remove("WrappedDomain", domain.id);
   }
 
   let labelName = ens.nameByHash(label.toHexString());
@@ -110,7 +110,7 @@ export function handleNameRegistered(event: NameRegisteredEvent): void {
   domain.save();
   registration.save();
 
-  let registrationEvent = new NameRegistered(createEventID(event));
+  let registrationEvent = new NameRegistered(createLegacyEventID(event));
   registrationEvent.registration = registration.id;
   registrationEvent.blockNumber = event.block.number.toI32();
   registrationEvent.transactionID = event.transaction.hash;
@@ -172,10 +172,10 @@ function setNamePreimage(name: string, label: Bytes, cost: BigInt): void {
     return;
   }
 
-  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label)));
+  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label))).toHexString();
   let domain = Domain.load(domainId);
   if (domain == null) {
-    log.warning("setNamePreimage: no Domain for {}, skipping", [domainId.toHexString()]);
+    log.warning("setNamePreimage: no Domain for {}, skipping", [domainId]);
     return;
   }
   if (domain.labelName != name) {
@@ -184,7 +184,7 @@ function setNamePreimage(name: string, label: Bytes, cost: BigInt): void {
     domain.save();
   }
 
-  let registration = Registration.load(Bytes.fromByteArray(label));
+  let registration = Registration.load(Bytes.fromByteArray(label).toHexString());
   if (registration == null) return;
   registration.labelName = name;
   registration.cost = cost;
@@ -193,16 +193,16 @@ function setNamePreimage(name: string, label: Bytes, cost: BigInt): void {
 
 export function handleNameRenewed(event: NameRenewedEvent): void {
   let label = uint256ToByteArray(event.params.id);
-  let labelBytes = Bytes.fromByteArray(label);
-  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label)));
-  let registration = Registration.load(labelBytes);
+  let labelHex = Bytes.fromByteArray(label).toHexString();
+  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label))).toHexString();
+  let registration = Registration.load(labelHex);
   if (registration == null) {
-    log.warning("handleNameRenewed: no Registration for {}, skipping", [labelBytes.toHexString()]);
+    log.warning("handleNameRenewed: no Registration for {}, skipping", [labelHex]);
     return;
   }
   let domain = Domain.load(domainId);
   if (domain == null) {
-    log.warning("handleNameRenewed: no Domain for {}, skipping", [domainId.toHexString()]);
+    log.warning("handleNameRenewed: no Domain for {}, skipping", [domainId]);
     return;
   }
 
@@ -212,7 +212,7 @@ export function handleNameRenewed(event: NameRenewedEvent): void {
   registration.save();
   domain.save();
 
-  let registrationEvent = new NameRenewed(createEventID(event));
+  let registrationEvent = new NameRenewed(createLegacyEventID(event));
   registrationEvent.registration = registration.id;
   registrationEvent.blockNumber = event.block.number.toI32();
   registrationEvent.transactionID = event.transaction.hash;
@@ -221,18 +221,18 @@ export function handleNameRenewed(event: NameRenewedEvent): void {
 }
 
 export function handleNameTransferred(event: TransferEvent): void {
-  let account = new Account(event.params.to);
+  let account = new Account(event.params.to.toHexString());
   account.save();
 
   let label = uint256ToByteArray(event.params.tokenId);
-  let labelBytes = Bytes.fromByteArray(label);
-  let registration = Registration.load(labelBytes);
+  let labelHex = Bytes.fromByteArray(label).toHexString();
+  let registration = Registration.load(labelHex);
   if (registration == null) return;
 
-  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label)));
+  let domainId = Bytes.fromByteArray(crypto.keccak256(concat(rootNode, label))).toHexString();
   let domain = Domain.load(domainId);
   if (domain == null) {
-    log.warning("handleNameTransferred: no Domain for {}, skipping", [domainId.toHexString()]);
+    log.warning("handleNameTransferred: no Domain for {}, skipping", [domainId]);
     return;
   }
 
@@ -242,8 +242,8 @@ export function handleNameTransferred(event: TransferEvent): void {
   domain.save();
   registration.save();
 
-  let transferEvent = new NameTransferred(createEventID(event));
-  transferEvent.registration = labelBytes;
+  let transferEvent = new NameTransferred(createLegacyEventID(event));
+  transferEvent.registration = labelHex;
   transferEvent.blockNumber = event.block.number.toI32();
   transferEvent.transactionID = event.transaction.hash;
   transferEvent.newOwner = account.id;

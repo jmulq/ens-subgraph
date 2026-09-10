@@ -22,7 +22,7 @@ import {
   Transfer,
 } from "../src/types/ENSRegistry/EnsRegistry";
 import { Domain } from "../src/types/schema";
-import { concat, createEventID, ROOT_NODE } from "../src/utils";
+import { concat, createLegacyEventID, ROOT_NODE } from "../src/utils";
 
 const ETH_NAMEHASH =
   "0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae";
@@ -192,8 +192,8 @@ const seedDomain = (
   owner: string,
   isMigrated: boolean
 ): void => {
-  let domain = new Domain(Bytes.fromHexString(node));
-  domain.owner = Address.fromString(owner);
+  let domain = new Domain(node);
+  domain.owner = Address.fromString(owner).toHexString();
   domain.isMigrated = isMigrated;
   domain.subdomainCount = 0;
   domain.createdAt = BigInt.fromI32(0);
@@ -232,7 +232,7 @@ test("sets 0x0 resolver to null", () => {
   );
   handleNewResolver(newNewResolverEvent);
 
-  let fetchedDomain = Domain.load(Bytes.fromHexString(namehash))!;
+  let fetchedDomain = Domain.load(namehash)!;
 
   // assert.assertNotNull<T> does `value != null` internally, which crashes
   // the AS compiler for a nullable Bytes generic (a known compiler
@@ -246,7 +246,7 @@ test("sets 0x0 resolver to null", () => {
   const emptyResolverEvent = createNewResolverEvent(namehash, EMPTY_ADDRESS);
   handleNewResolver(emptyResolverEvent);
 
-  fetchedDomain = Domain.load(Bytes.fromHexString(namehash))!;
+  fetchedDomain = Domain.load(namehash)!;
 
   // assert.assertNull<T> does `value == null` internally, which crashes the
   // AS compiler for a nullable Bytes generic (the same compiler
@@ -268,7 +268,7 @@ test("handleTransfer updates the domain owner and writes a Transfer history row"
     Address.fromString(newOwner).toHexString()
   );
 
-  let eventId = createEventID(transferEvent).toHexString();
+  let eventId = createLegacyEventID(transferEvent);
   assert.fieldEquals("Transfer", eventId, "domain", NODE_TRANSFER);
   assert.fieldEquals(
     "Transfer",
@@ -285,7 +285,7 @@ test("handleNewTTL sets ttl on an existing domain, and still writes history when
   handleNewTTL(ttlEvent);
 
   assert.fieldEquals("Domain", NODE_NEWTTL_EXISTS, "ttl", "3600");
-  let eventId = createEventID(ttlEvent).toHexString();
+  let eventId = createLegacyEventID(ttlEvent);
   assert.fieldEquals("NewTTL", eventId, "domain", NODE_NEWTTL_EXISTS);
   assert.fieldEquals("NewTTL", eventId, "ttl", "3600");
 
@@ -299,7 +299,7 @@ test("handleNewTTL sets ttl on an existing domain, and still writes history when
   handleNewTTL(missingDomainEvent);
 
   assert.notInStore("Domain", NODE_NEWTTL_MISSING);
-  let missingEventId = createEventID(missingDomainEvent).toHexString();
+  let missingEventId = createLegacyEventID(missingDomainEvent);
   assert.fieldEquals("NewTTL", missingEventId, "domain", NODE_NEWTTL_MISSING);
   assert.fieldEquals("NewTTL", missingEventId, "ttl", "7200");
 });
@@ -360,7 +360,7 @@ test("handleNewOwnerOldRegistry creates a fresh domain when none exists, then sk
   // fire the OldRegistry event again with a third owner -- must be a
   // complete no-op, since the old registry must never override state for a
   // domain that has already migrated to the current one.
-  let domain = Domain.load(subnode)!;
+  let domain = Domain.load(subnode.toHexString())!;
   domain.isMigrated = true;
   domain.save();
 
@@ -390,7 +390,7 @@ test("handleNewResolverOldRegistry processes for ROOT_NODE and a non-migrated do
   );
   handleNewResolverOldRegistry(rootResolverEvent);
 
-  let rootDomain = Domain.load(ROOT_NODE)!;
+  let rootDomain = Domain.load(ROOT_NODE.toHexString())!;
   let rootHasResolver = false;
   if (rootDomain.resolver) {
     rootHasResolver = true;
@@ -405,7 +405,7 @@ test("handleNewResolverOldRegistry processes for ROOT_NODE and a non-migrated do
   );
   handleNewResolverOldRegistry(resolverEvent);
 
-  let domain = Domain.load(Bytes.fromHexString(NODE_RESOLVER_NONMIGRATED))!;
+  let domain = Domain.load(NODE_RESOLVER_NONMIGRATED)!;
   let hasResolver = false;
   if (domain.resolver) {
     hasResolver = true;
@@ -420,9 +420,7 @@ test("handleNewResolverOldRegistry processes for ROOT_NODE and a non-migrated do
   );
   handleNewResolverOldRegistry(migratedResolverEvent);
 
-  let migratedDomain = Domain.load(
-    Bytes.fromHexString(NODE_RESOLVER_MIGRATED)
-  )!;
+  let migratedDomain = Domain.load(NODE_RESOLVER_MIGRATED)!;
   let migratedHasResolver = false;
   if (migratedDomain.resolver) {
     migratedHasResolver = true;
@@ -449,7 +447,7 @@ test("handleNewTTLOldRegistry processes a non-migrated domain but skips an alrea
 
   // ttl must stay unset (null) -- the old registry must not touch a domain
   // that has already migrated to the current one.
-  let migratedDomain = Domain.load(Bytes.fromHexString(NODE_TTL_MIGRATED))!;
+  let migratedDomain = Domain.load(NODE_TTL_MIGRATED)!;
   assert.assertTrue(!migratedDomain.ttl);
 });
 
