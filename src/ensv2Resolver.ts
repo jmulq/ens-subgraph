@@ -16,15 +16,36 @@ import { Address, BigInt, Bytes, crypto, ethereum } from "@graphprotocol/graph-t
 import { concat, ROOT_NODE, uint256ToByteArray } from "./utils";
 import { decodeName } from "./nameWrapper";
 import { processEACRolesChanged } from "./ensv2Roles";
-import { ENSv2Resolver, ENSv2ResolverAlias, ENSv2ResolverData, ENSv2ResolverResource } from "./types/schema";
 import {
+  ENSv2Resolver,
+  ENSv2ResolverABI,
+  ENSv2ResolverAddress,
+  ENSv2ResolverAlias,
+  ENSv2ResolverData,
+  ENSv2ResolverInterface,
+  ENSv2ResolverLink,
+  ENSv2ResolverRecord,
+  ENSv2ResolverRecordData,
+  ENSv2ResolverResource,
+  ENSv2ResolverText,
+} from "./types/schema";
+import {
+  ABIUpdated,
+  AddressUpdated,
   AliasChanged,
+  ContenthashUpdated,
   DataChanged,
+  DataUpdated,
   EACRolesChanged,
+  InterfaceUpdated,
+  Linked,
+  NameUpdated,
   NamedAddrResource,
   NamedDataResource,
   NamedResource,
   NamedTextResource,
+  ResolverCreated,
+  TextUpdated,
 } from "./types/PermissionedResolver/PermissionedResolver";
 
 // decodeName only recovers the first label + a dotted human-readable string
@@ -287,4 +308,175 @@ export function handleEACRolesChanged(event: EACRolesChanged): void {
     event.transaction.hash,
     event.logIndex
   );
+}
+
+// --- New (recordId-keyed) PermissionedResolver event model (GitHub #43) ---
+// See schema.graphql's own comment above ENSv2ResolverRecord for what a
+// recordId actually is. Wired alongside the old handlers above rather than
+// replacing them — the actually-deployed Sepolia implementation still
+// emits the old event set, and this is an addressless data source, so both
+// models route correctly with zero topic0 collision risk.
+
+// Caller must never invoke with recordId.isZero() — 0 is the "no record"
+// sentinel (see handleLinked), not a real record to get-or-create.
+function getOrCreateRecord(
+  resolver: ENSv2Resolver,
+  recordId: BigInt,
+  event: ethereum.Event
+): ENSv2ResolverRecord {
+  let id = Bytes.fromByteArray(concat(resolver.id, uint256ToByteArray(recordId)));
+  let record = ENSv2ResolverRecord.load(id);
+  if (record == null) {
+    record = new ENSv2ResolverRecord(id);
+    record.resolver = resolver.id;
+    record.recordId = recordId;
+    record.createdAtBlock = event.block.number;
+  }
+  record.updatedAtBlock = event.block.number;
+  record.save();
+  return record;
+}
+
+// Also fires from the bare implementation contract's own constructor, not
+// just a proxy's initialize() — creates a harmless stray ENSv2Resolver row
+// for the implementation address itself, which never gets any records or
+// links attached.
+export function handleResolverCreated(event: ResolverCreated): void {
+  getOrCreateResolver(event.address);
+}
+
+export function handleLinked(event: Linked): void {
+  let resolver = getOrCreateResolver(event.address);
+  let recordId = event.params.recordId;
+  let id = Bytes.fromByteArray(concat(resolver.id, event.params.node));
+
+  let link = ENSv2ResolverLink.load(id);
+  if (link == null) {
+    link = new ENSv2ResolverLink(id);
+    link.resolver = resolver.id;
+    link.node = event.params.node;
+  }
+  link.name = event.params.name;
+  link.nameDecoded = decodedNameOf(event.params.name);
+  link.recordId = recordId;
+  // recordId 0 is the explicit-unlink sentinel (linkToRecord(name, 0)) —
+  // not a real record, so no getOrCreateRecord call and no relation.
+  if (recordId.isZero()) {
+    link.record = null;
+    link.active = false;
+  } else {
+    let record = getOrCreateRecord(resolver, recordId, event);
+    link.record = record.id;
+    link.active = true;
+  }
+  link.blockNumber = event.block.number;
+  link.transactionID = event.transaction.hash;
+  link.logIndex = event.logIndex;
+  link.save();
+}
+
+export function handleContenthashUpdated(event: ContenthashUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  record.contenthash = event.params.hash;
+  record.save();
+}
+
+export function handleNameUpdated(event: NameUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  record.primaryName = event.params.primaryName;
+  record.save();
+}
+
+export function handleAddressUpdated(event: AddressUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  let id = Bytes.fromByteArray(
+    concat(record.id, uint256ToByteArray(event.params.coinType))
+  );
+  let entity = ENSv2ResolverAddress.load(id);
+  if (entity == null) {
+    entity = new ENSv2ResolverAddress(id);
+    entity.record = record.id;
+    entity.coinType = event.params.coinType;
+  }
+  entity.addressBytes = event.params.addressBytes;
+  entity.blockNumber = event.block.number;
+  entity.transactionID = event.transaction.hash;
+  entity.logIndex = event.logIndex;
+  entity.save();
+}
+
+export function handleTextUpdated(event: TextUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  let id = Bytes.fromByteArray(concat(record.id, event.params.keyHash));
+  let entity = ENSv2ResolverText.load(id);
+  if (entity == null) {
+    entity = new ENSv2ResolverText(id);
+    entity.record = record.id;
+    entity.keyHash = event.params.keyHash;
+  }
+  entity.key = event.params.key;
+  entity.value = event.params.value;
+  entity.blockNumber = event.block.number;
+  entity.transactionID = event.transaction.hash;
+  entity.logIndex = event.logIndex;
+  entity.save();
+}
+
+// Named handleRecordDataUpdated, not handleDataUpdated, so it doesn't read
+// as a collision with the existing (old-model) handleDataChanged above.
+export function handleRecordDataUpdated(event: DataUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  let id = Bytes.fromByteArray(concat(record.id, event.params.keyHash));
+  let entity = ENSv2ResolverRecordData.load(id);
+  if (entity == null) {
+    entity = new ENSv2ResolverRecordData(id);
+    entity.record = record.id;
+    entity.keyHash = event.params.keyHash;
+  }
+  entity.key = event.params.key;
+  entity.value = event.params.value;
+  entity.blockNumber = event.block.number;
+  entity.transactionID = event.transaction.hash;
+  entity.logIndex = event.logIndex;
+  entity.save();
+}
+
+export function handleABIUpdated(event: ABIUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  let id = Bytes.fromByteArray(
+    concat(record.id, uint256ToByteArray(event.params.contentType))
+  );
+  let entity = ENSv2ResolverABI.load(id);
+  if (entity == null) {
+    entity = new ENSv2ResolverABI(id);
+    entity.record = record.id;
+    entity.contentType = event.params.contentType;
+  }
+  entity.blockNumber = event.block.number;
+  entity.transactionID = event.transaction.hash;
+  entity.logIndex = event.logIndex;
+  entity.save();
+}
+
+export function handleInterfaceUpdated(event: InterfaceUpdated): void {
+  let resolver = getOrCreateResolver(event.address);
+  let record = getOrCreateRecord(resolver, event.params.recordId, event);
+  let id = Bytes.fromByteArray(concat(record.id, event.params.interfaceId));
+  let entity = ENSv2ResolverInterface.load(id);
+  if (entity == null) {
+    entity = new ENSv2ResolverInterface(id);
+    entity.record = record.id;
+    entity.interfaceId = event.params.interfaceId;
+  }
+  entity.implementer = event.params.implementer;
+  entity.blockNumber = event.block.number;
+  entity.transactionID = event.transaction.hash;
+  entity.logIndex = event.logIndex;
+  entity.save();
 }

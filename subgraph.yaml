@@ -453,6 +453,13 @@ dataSources:
         - ENSv2ResolverAlias
         - ENSv2ResolverResource
         - ENSv2ResolverData
+        - ENSv2ResolverRecord
+        - ENSv2ResolverLink
+        - ENSv2ResolverAddress
+        - ENSv2ResolverText
+        - ENSv2ResolverRecordData
+        - ENSv2ResolverABI
+        - ENSv2ResolverInterface
         - ENSv2RoleAssignment
         - ENSv2RoleChange
         # Actually written via getOrCreateResolver / processEACRolesChanged
@@ -464,6 +471,9 @@ dataSources:
         - name: PermissionedResolver
           file: ./abis/PermissionedResolver.json
       eventHandlers:
+        # Old (superseded) event model — kept wired alongside the new model
+        # below, since the actually-live Sepolia implementation still emits
+        # these (GitHub #43).
         - event: "AliasChanged(indexed bytes,indexed bytes,bytes,bytes)"
           handler: handleAliasChanged
         - event: "NamedResource(indexed uint256,bytes)"
@@ -478,6 +488,26 @@ dataSources:
           handler: handleDataChanged
         - event: "EACRolesChanged(indexed uint256,indexed address,uint256,uint256)"
           handler: handleEACRolesChanged
+        # New (recordId-keyed) event model, from contracts-v2 PR #354
+        # (GitHub #43).
+        - event: "Linked(indexed uint256,indexed bytes32,bytes)"
+          handler: handleLinked
+        - event: "ResolverCreated()"
+          handler: handleResolverCreated
+        - event: "ContenthashUpdated(indexed uint256,bytes)"
+          handler: handleContenthashUpdated
+        - event: "AddressUpdated(indexed uint256,uint256,bytes)"
+          handler: handleAddressUpdated
+        - event: "TextUpdated(indexed uint256,indexed string,string,string)"
+          handler: handleTextUpdated
+        - event: "DataUpdated(indexed uint256,indexed string,string,bytes)"
+          handler: handleRecordDataUpdated
+        - event: "ABIUpdated(indexed uint256,indexed uint256)"
+          handler: handleABIUpdated
+        - event: "InterfaceUpdated(indexed uint256,indexed bytes4,address)"
+          handler: handleInterfaceUpdated
+        - event: "NameUpdated(indexed uint256,string)"
+          handler: handleNameUpdated
 
 templates:
   - kind: ethereum/contract
