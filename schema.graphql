@@ -490,10 +490,8 @@ type ENSv2Registry @entity(immutable: false) {
   id: Bytes! # registry address
   address: Bytes!
   # Captured from VerifiableFactory.ProxyDeployed's own implementation param
-  # (audit finding 4) — not yet used to classify `kind` (that needs a known
-  # implementation-address-to-kind mapping, still pending), but preserved so
-  # a future classification fix can backfill already-indexed registries
-  # instead of requiring a full re-index.
+  # (audit finding 4) — used to classify `kind` as USER/WRAPPER via a known
+  # implementation-address-to-kind mapping (see kindForAddress).
   implementation: Bytes
   kind: ENSv2RegistryKind!
   canonicalParentRegistry: ENSv2Registry
@@ -503,6 +501,28 @@ type ENSv2Registry @entity(immutable: false) {
   discoveredAt: BigInt!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
+}
+
+# HCA (Hierarchical Context Authority) proxies are deployed through the same
+# VerifiableFactory this subgraph already indexes for ENSv2Registry proxies
+# — StandaloneHCAFactory shares that instance rather than deploying its own
+# — so an HCA deployment fires the identical ProxyDeployed event a registry
+# deployment does. Recorded separately here rather than folded into
+# ENSv2Registry: an HCA isn't a registry (no namespaces/subdomains under
+# it), so giving it a Registry row — even tagged UNKNOWN — would be wrong,
+# not just imprecise (GitHub #72 follow-up). See contracts-v2/docs/HCA.md
+# for what an HCA actually is (an optional, per-wallet ENS execution
+# account, not the wallet's identity).
+type ENSv2HCA @entity(immutable: false) {
+  id: Bytes! # HCA proxy address
+  implementation: Bytes!
+  # ProxyDeployed's own `sender` param — the caller of
+  # StandaloneHCAFactory.deploy(...), not necessarily the HCA's eventual
+  # owner (the real owner is an argument to that call, not surfaced on the
+  # ProxyDeployed event itself).
+  deployer: Bytes!
+  discoveredAt: BigInt!
+  createdAtBlock: BigInt!
 }
 
 type ENSv2NameSlot @entity(immutable: false) {

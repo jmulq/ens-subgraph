@@ -18,6 +18,7 @@ const IMPLEMENTATION = "0x22222222222222222222222222222222222222bb";
 const USER_REGISTRY_IMPL = "0x624a25d67b59d587752ebec8dded8827dae52050";
 const WRAPPER_REGISTRY_IMPL = "0x433f81a3e8921fc868ae1a04576f135d9a75b0f2";
 const PERMISSIONED_RESOLVER_IMPL = "0x9eae5c2730a7dd16bdd1dee6421a1b91e3b0365e";
+const STANDALONE_HCA_IMPL = "0xaa761541620fc1a42bb701a26a9f107a9df1e904";
 
 const createProxyDeployedEvent = (
   proxyAddress: string,
@@ -132,4 +133,32 @@ test("handleProxyDeployed skips templating and creates no ENSv2Registry row for 
 
   let id = Address.fromString(resolverProxyAddress).toHexString();
   assert.notInStore("ENSv2Registry", id);
+});
+
+// StandaloneHCAFactory shares this VerifiableFactory instance rather than
+// deploying its own, so an HCA deployment fires the identical ProxyDeployed
+// event a registry deployment does — same shape as the resolver case above,
+// same fix (GitHub #72 follow-up): no ENSv2Registry row, a dedicated
+// ENSv2HCA row instead.
+test("handleProxyDeployed skips templating and creates an ENSv2HCA row, not an ENSv2Registry row, for a StandaloneHCA implementation", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  let hcaProxyAddress = "0x66666666666666666666666666666666666666ff";
+  let event = createProxyDeployedEvent(hcaProxyAddress, STANDALONE_HCA_IMPL);
+  handleProxyDeployed(event);
+
+  let id = Address.fromString(hcaProxyAddress).toHexString();
+  assert.notInStore("ENSv2Registry", id);
+  assert.fieldEquals(
+    "ENSv2HCA",
+    id,
+    "implementation",
+    Address.fromString(STANDALONE_HCA_IMPL).toHexString()
+  );
+  assert.fieldEquals(
+    "ENSv2HCA",
+    id,
+    "deployer",
+    Address.fromString(SENDER).toHexString()
+  );
 });

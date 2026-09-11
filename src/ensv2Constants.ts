@@ -141,3 +141,23 @@ export function getPermissionedResolverImplAddress(): Address {
   );
   return Address.zero();
 }
+
+// StandaloneHCAFactory (HCA = Hierarchical Context Authority, an optional
+// ENS execution account — see contracts-v2/docs/HCA.md) shares this
+// deployment's VerifiableFactory instance rather than deploying its own, so
+// every HCA proxy fires the identical ProxyDeployed event a registry
+// deployment does. Without recognizing this implementation, kindForAddress
+// falls through to UNKNOWN and handleProxyDeployed wrongly creates an
+// ENSv2Registry row for it (same bug class as the resolver case, #33/#36 —
+// an HCA isn't a registry either).
+export function getStandaloneHCAImplAddress(): Address {
+  let network = dataSource.network();
+  if (network == "sepolia") {
+    return Address.fromString("0xaa761541620fc1a42bb701a26a9f107a9df1e904");
+  }
+  log.critical(
+    "getStandaloneHCAImplAddress: no StandaloneHCA implementation address configured for network '{}'. Refusing to silently return the zero address (which would fail to recognize HCA ProxyDeployed events, creating a bogus ENSv2Registry row for each one) — add the real address for this network or fix the manifest's network label.",
+    [network]
+  );
+  return Address.zero();
+}

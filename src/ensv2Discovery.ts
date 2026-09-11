@@ -9,10 +9,11 @@ import {
   getEthRegistryAddress,
   getPermissionedResolverImplAddress,
   getRootRegistryAddress,
+  getStandaloneHCAImplAddress,
   getUserRegistryImplAddress,
   getWrapperRegistryImplAddress,
 } from "./ensv2Constants";
-import { ENSv2Namespace, ENSv2Registry } from "./types/schema";
+import { ENSv2HCA, ENSv2Namespace, ENSv2Registry } from "./types/schema";
 import { ProxyDeployed } from "./types/VerifiableFactory/VerifiableFactory";
 import { ENSv2Registry as ENSv2RegistryTemplate } from "./types/templates";
 
@@ -109,17 +110,35 @@ export function getOrCreateRootNamespace(
   return namespace;
 }
 
-// VerifiableFactory.deployProxy() is used for both registry and resolver
-// proxies (per the ENSv2 Subgraph Upgrade Proposal's "Discovery" section).
-// Resolver events are handled entirely via the addressless PermissionedResolver
-// data source, so resolvers need no discovery step — and now that the implementation address
-// is known (GitHub #34), a resolver deployment can be told apart from a
-// registry one directly: skip templating/registry-row creation entirely for
-// it, rather than creating a harmless-but-wrong ENSv2Registry row the way
-// this function used to (GitHub #33 / #36 / audit finding 4).
+// VerifiableFactory.deployProxy() is used for registry, resolver, and HCA
+// proxies alike (per the ENSv2 Subgraph Upgrade Proposal's "Discovery"
+// section, plus StandaloneHCAFactory sharing this same VerifiableFactory
+// instance rather than deploying its own — GitHub #72 follow-up). Resolver
+// events are handled entirely via the addressless PermissionedResolver data
+// source, so resolvers need no discovery step — and now that the
+// implementation address is known (GitHub #34), a resolver deployment can
+// be told apart from a registry one directly: skip templating/registry-row
+// creation entirely for it, rather than creating a harmless-but-wrong
+// ENSv2Registry row the way this function used to (GitHub #33 / #36 /
+// audit finding 4). Same reasoning for an HCA deployment — it isn't a
+// registry either, so it gets its own ENSv2HCA row instead.
 export function handleProxyDeployed(event: ProxyDeployed): void {
   let implementation = event.params.implementation;
   if (implementation.equals(getPermissionedResolverImplAddress())) {
+    return;
+  }
+  if (implementation.equals(getStandaloneHCAImplAddress())) {
+    // ProxyDeployed only ever fires once for a given proxy address, but
+    // guard anyway rather than assume — same defensive pattern as
+    // getOrCreateRegistry below.
+    if (ENSv2HCA.load(event.params.proxyAddress) == null) {
+      let hca = new ENSv2HCA(event.params.proxyAddress);
+      hca.implementation = implementation;
+      hca.deployer = event.params.sender;
+      hca.discoveredAt = event.block.timestamp;
+      hca.createdAtBlock = event.block.number;
+      hca.save();
+    }
     return;
   }
 

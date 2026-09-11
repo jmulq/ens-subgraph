@@ -431,6 +431,7 @@ dataSources:
       file: ./src/ensv2Discovery.ts
       entities:
         - ENSv2Registry
+        - ENSv2HCA
       abis:
         - name: VerifiableFactory
           file: ./abis/VerifiableFactory.json

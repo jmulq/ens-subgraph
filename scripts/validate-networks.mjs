@@ -9,8 +9,8 @@
 //    unguarded (audit finding 1 / #27, finding 17).
 // 2. src/ensv2Constants.ts vs contracts-v2's own deployment artifacts —
 //    ensv2Constants.ts's hardcoded per-network Address.fromString(...)
-//    literals (RootRegistry/ETHRegistry/migration controllers/registry &
-//    resolver implementation addresses) aren't data sources, so
+//    literals (RootRegistry/ETHRegistry/migration controllers/registry,
+//    resolver, and HCA implementation addresses) aren't data sources, so
 //    networks.json has no room for them and check 1 can't see them at all.
 //    This project has already had one real incident from exactly this gap:
 //    "Phase 10" existed specifically because these addresses changed under
@@ -123,6 +123,7 @@ const CONSTANTS_TO_DEPLOYMENT = {
   getUserRegistryImplAddress: ["UserRegistryImpl.json"],
   getWrapperRegistryImplAddress: ["WrapperRegistryImpl.json"],
   getPermissionedResolverImplAddress: ["PermissionedResolverImpl.json"],
+  getStandaloneHCAImplAddress: ["StandaloneHCAImplementation.json"],
   getMigrationControllers: [
     "LockedMigrationController.json",
     "UnlockedMigrationController.json",
