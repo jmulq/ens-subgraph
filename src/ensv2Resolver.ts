@@ -12,7 +12,7 @@
 // or construct Domain rows — true by construction, not by a guard: alias
 // and resource records are ENSv2-only surfaces, never a substitute for a
 // real registry path (an explicit non-goal of this design).
-import { Address, BigInt, Bytes, crypto, ethereum } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, crypto, ethereum, log } from "@graphprotocol/graph-ts";
 import { concat, ROOT_NODE, uint256ToByteArray } from "./utils";
 import { decodeName } from "./nameWrapper";
 import { processEACRolesChanged } from "./ensv2Roles";
@@ -61,12 +61,29 @@ export function namehashFromDnsEncoded(buf: Bytes): Bytes {
   let labels = new Array<Bytes>();
   let offset = 0;
   let hex = buf.toHexString();
-  let len = buf[offset++];
-  while (len) {
+
+  // GitHub #60: buf[offset++] traps (crashes indexing) if offset ever runs
+  // past buf.length — guard the loop condition itself rather than reading
+  // unconditionally, so an empty buffer or one missing its trailing
+  // zero-length terminator ends the loop instead of indexing out of bounds.
+  while (offset < buf.length) {
+    let len = buf[offset++];
+    if (len == 0) {
+      break;
+    }
+    // A label claiming more content bytes than actually remain — truncated
+    // or malformed input. Stop folding here (whatever labels were already
+    // parsed still get used) rather than slicing/reading past the buffer.
+    if (offset + len > buf.length) {
+      log.warning(
+        "namehashFromDnsEncoded: truncated/malformed DNS-wire name — label length {} at offset {} exceeds buffer length {}; folding only the labels parsed so far",
+        [len.toString(), (offset - 1).toString(), buf.length.toString()]
+      );
+      break;
+    }
     let labelHex = hex.slice((offset + 1) * 2, (offset + 1 + len) * 2);
     labels.push(Bytes.fromHexString(labelHex));
     offset += len;
-    len = buf[offset++];
   }
 
   let node: Bytes = ROOT_NODE;

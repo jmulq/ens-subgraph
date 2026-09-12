@@ -876,3 +876,51 @@ test("ABIUpdated and InterfaceUpdated produce their own child rows keyed by reco
     implementer.toHexString()
   );
 });
+
+// --- namehashFromDnsEncoded bounds guard (GitHub #60, V2-only fix) ---
+
+test("namehashFromDnsEncoded on an empty buffer returns ROOT_NODE instead of crashing", () => {
+  let empty = Bytes.fromUint8Array(new Uint8Array(0));
+  let node = namehashFromDnsEncoded(empty);
+  assert.bytesEquals(
+    Bytes.fromHexString(
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    node
+  );
+});
+
+test("namehashFromDnsEncoded on a buffer with no trailing zero-length terminator still folds every real label", () => {
+  // "alice" with its length prefix but no root terminator byte -- a
+  // truncated encoding, distinct from the malformed-length case below.
+  let labelBytes = Bytes.fromUTF8("alice");
+  let out = new Uint8Array(labelBytes.length + 1);
+  out[0] = labelBytes.length as u8;
+  for (let i = 0; i < labelBytes.length; i++) {
+    out[i + 1] = labelBytes[i];
+  }
+  let noTerminator = Bytes.fromUint8Array(out);
+
+  let node = namehashFromDnsEncoded(noTerminator);
+  assert.bytesEquals(namehashFromDnsEncoded(encodeLabel("alice")), node);
+});
+
+test("namehashFromDnsEncoded on a label length exceeding the remaining buffer stops early instead of reading out of bounds", () => {
+  // Claims a 10-byte label but only 3 content bytes actually follow.
+  let out = new Uint8Array(4);
+  out[0] = 10;
+  out[1] = 0x61; // 'a'
+  out[2] = 0x62; // 'b'
+  out[3] = 0x63; // 'c'
+  let malformed = Bytes.fromUint8Array(out);
+
+  // Must not trap/crash -- and since the one (malformed) label never
+  // parses, folds down to ROOT_NODE, same as the empty-buffer case.
+  let node = namehashFromDnsEncoded(malformed);
+  assert.bytesEquals(
+    Bytes.fromHexString(
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    node
+  );
+});
