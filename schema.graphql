@@ -610,6 +610,7 @@ type ENSv2Namespace @entity(immutable: false) {
   baseName: String
   baseNamehash: Bytes!
   active: Boolean!
+  pathCount: Int! # needed to enumerate ENSv2NamespacePathIndex (GitHub #47)
   createdAt: BigInt!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
@@ -953,6 +954,18 @@ type ENSv2PathNamespaceIndex @entity(immutable: true) {
   path: ENSv2NamePath!
   index: Int!
   namespace: ENSv2Namespace!
+}
+
+# Reverse of ENSv2PathNamespaceIndex above (path -> its namespaces) — this
+# is namespace -> the paths materialised under it, needed to deactivate all
+# of a namespace's paths in bounded time when the namespace itself is
+# deactivated (GitHub #47), the same way ENSv2SlotPathIndex already lets
+# handleLabelUnregistered deactivate a slot's own paths.
+type ENSv2NamespacePathIndex @entity(immutable: true) {
+  id: Bytes! # namespace + index
+  namespace: ENSv2Namespace!
+  index: Int!
+  path: ENSv2NamePath!
 }
 
 # ---------------------------------------------------------------------------

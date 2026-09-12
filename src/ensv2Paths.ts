@@ -24,6 +24,7 @@ import {
   nameSlotId,
   namespaceId,
   namespaceLinkId,
+  namespacePathIndexId,
   pathNamehash,
   pathNamespaceIndexId,
   registryNamespaceIndexId,
@@ -37,6 +38,7 @@ import {
   ENSv2NamePath,
   ENSv2Namespace,
   ENSv2NamespaceLink,
+  ENSv2NamespacePathIndex,
   ENSv2NameSlot,
   ENSv2PathNamespaceIndex,
   ENSv2Registry,
@@ -81,6 +83,29 @@ function appendPathNamespaceIndex(
   path.save();
 }
 
+// Reverse of appendPathNamespaceIndex above — lets deactivatePathsForNamespace
+// below find every path materialised under a namespace in bounded time when
+// that namespace is deactivated (GitHub #47), the same way ENSv2SlotPathIndex
+// already lets handleLabelUnregistered (ensv2Registry.ts) deactivate a
+// slot's own paths. Called once, at path creation, alongside
+// appendSlotPathIndex — a path's (namespace, slot) pair is fixed for its
+// whole life, so it only ever needs indexing once.
+function appendNamespacePathIndex(
+  namespace: ENSv2Namespace,
+  path: ENSv2NamePath
+): void {
+  let index = new ENSv2NamespacePathIndex(
+    namespacePathIndexId(namespace.id, namespace.pathCount)
+  );
+  index.namespace = namespace.id;
+  index.index = namespace.pathCount;
+  index.path = path.id;
+  index.save();
+
+  namespace.pathCount = namespace.pathCount + 1;
+  namespace.save();
+}
+
 // Idempotent: sets active = true whether creating or reactivating. Caller
 // checks pre-existence (ENSv2Namespace.load(id) == null, before calling
 // this) to decide whether to append indices — reactivation must never
@@ -96,6 +121,7 @@ function createOrReactivateNamespace(
   if (namespace == null) {
     namespace = new ENSv2Namespace(id);
     namespace.registry = childRegistry.id;
+    namespace.pathCount = 0;
     namespace.createdAt = event.block.timestamp;
     namespace.createdAtBlock = event.block.number;
   }
@@ -210,6 +236,34 @@ function deactivateNamespacesFromParentSlot(
     namespace.active = false;
     namespace.updatedAtBlock = block.number;
     namespace.save();
+    deactivatePathsForNamespace(namespace, block);
+  }
+}
+
+// GitHub #47: paths materialised under a namespace (one per slot ever
+// registered in the namespace's registry while it was active — see
+// materializePathsForSlot) stayed active:true forever even after their
+// owning namespace was deactivated above. Bounded by namespace.pathCount
+// via ENSv2NamespacePathIndex, the same pattern
+// handleLabelUnregistered (ensv2Registry.ts) already uses for a slot's own
+// paths — not an unbounded scan over the child registry's slots.
+function deactivatePathsForNamespace(
+  namespace: ENSv2Namespace,
+  block: ethereum.Block
+): void {
+  for (let i = 0; i < namespace.pathCount; i++) {
+    let pathIndex = ENSv2NamespacePathIndex.load(namespacePathIndexId(namespace.id, i));
+    if (pathIndex == null) {
+      continue;
+    }
+    let path = ENSv2NamePath.load(pathIndex.path);
+    if (path == null) {
+      continue;
+    }
+    path.active = false;
+    path.updatedAt = block.timestamp;
+    path.updatedAtBlock = block.number;
+    path.save();
   }
 }
 
@@ -333,6 +387,7 @@ export function materializePathsForSlot(
     if (path == null) {
       path = materializeNamePath(pathId, namespace, slot, event);
       appendSlotPathIndex(slot, path);
+      appendNamespacePathIndex(namespace, path);
     } else {
       path.active = true;
       path.updatedAt = event.block.timestamp;

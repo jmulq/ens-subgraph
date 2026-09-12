@@ -533,6 +533,54 @@ test("SubregistryUpdated(..., address(0)) clears the link and deactivates (not d
   assert.fieldEquals("ENSv2Namespace", namespaceEntityId, "active", "false");
 });
 
+test("deactivating a namespace also deactivates the paths materialised under it (GitHub #47)", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  const CHILD_REGISTRY = "0x666666666666666666666666666666666666666f";
+  const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+  // Link CHILD_REGISTRY under the root at "linked", creating a namespace
+  // for it, then register a name directly IN that child registry -- this
+  // is the path that must go inactive once the namespace does.
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      ROOT_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(70),
+      "linked"
+    )
+  );
+  handleSubregistryUpdated(
+    createSubregistryUpdatedEvent(ROOT_REGISTRY, slotToken(1), CHILD_REGISTRY)
+  );
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      CHILD_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(80),
+      "leaf"
+    )
+  );
+
+  let linkedPathId = pathNamehash(
+    Bytes.fromHexString(ROOT_NAMEHASH),
+    Bytes.fromI32(70)
+  ).toHexString();
+  let leafPathId = pathNamehash(
+    Bytes.fromHexString(linkedPathId),
+    Bytes.fromI32(80)
+  ).toHexString();
+  assert.fieldEquals("ENSv2NamePath", leafPathId, "active", "true");
+
+  // Clear the link -- deactivates the namespace, which must now cascade to
+  // "leaf"'s path (materialised inside CHILD_REGISTRY under that namespace).
+  handleSubregistryUpdated(
+    createSubregistryUpdatedEvent(ROOT_REGISTRY, slotToken(1), ZERO_ADDRESS)
+  );
+
+  assert.fieldEquals("ENSv2NamePath", leafPathId, "active", "false");
+});
+
 test("fresh non-.eth registration produces a queryable Domain row with correct parent chain", () => {
   dataSourceMock.setNetwork("sepolia");
 

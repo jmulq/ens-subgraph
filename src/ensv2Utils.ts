@@ -62,6 +62,12 @@ export function pathNamespaceIndexId(pathId: Bytes, index: i32): Bytes {
   return Bytes.fromByteArray(concat(pathId, i32ToBytes(index)));
 }
 
+// Param named nsId, not namespaceId, to avoid shadowing this file's own
+// namespaceId() function above.
+export function namespacePathIndexId(nsId: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(nsId, i32ToBytes(index)));
+}
+
 export function namespaceId(registryId: Bytes, baseNamehash: Bytes): Bytes {
   return Bytes.fromByteArray(concat(registryId, baseNamehash));
 }

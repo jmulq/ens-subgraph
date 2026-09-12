@@ -92,6 +92,7 @@ export function getOrCreateRootNamespace(
     // that rather than relying on the fall-through.
     namespace.baseNamehash = rootNamehash;
     namespace.active = true;
+    namespace.pathCount = 0;
     namespace.createdAt = block.timestamp;
     namespace.createdAtBlock = block.number;
     namespace.updatedAtBlock = block.number;
