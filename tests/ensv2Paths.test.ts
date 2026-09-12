@@ -581,6 +581,68 @@ test("deactivating a namespace also deactivates the paths materialised under it 
   assert.fieldEquals("ENSv2NamePath", leafPathId, "active", "false");
 });
 
+test("deactivating a namespace deactivates EVERY path materialised under it, not just the first (GitHub #47)", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  const CHILD_REGISTRY = "0x777777777777777777777777777777777777778a";
+  const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      ROOT_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(90),
+      "multilinked"
+    )
+  );
+  handleSubregistryUpdated(
+    createSubregistryUpdatedEvent(ROOT_REGISTRY, slotToken(1), CHILD_REGISTRY)
+  );
+  // Two separate names registered in the same child registry -- two
+  // distinct paths materialised under the SAME namespace
+  // (namespace.pathCount == 2), unlike the single-path test above.
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      CHILD_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(91),
+      "leafone"
+    )
+  );
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      CHILD_REGISTRY,
+      slotToken(2),
+      Bytes.fromI32(92),
+      "leaftwo"
+    )
+  );
+
+  let linkedPathId = pathNamehash(
+    Bytes.fromHexString(ROOT_NAMEHASH),
+    Bytes.fromI32(90)
+  ).toHexString();
+  let leafOnePathId = pathNamehash(
+    Bytes.fromHexString(linkedPathId),
+    Bytes.fromI32(91)
+  ).toHexString();
+  let leafTwoPathId = pathNamehash(
+    Bytes.fromHexString(linkedPathId),
+    Bytes.fromI32(92)
+  ).toHexString();
+  assert.fieldEquals("ENSv2NamePath", leafOnePathId, "active", "true");
+  assert.fieldEquals("ENSv2NamePath", leafTwoPathId, "active", "true");
+
+  handleSubregistryUpdated(
+    createSubregistryUpdatedEvent(ROOT_REGISTRY, slotToken(1), ZERO_ADDRESS)
+  );
+
+  // The loop over namespace.pathCount must reach BOTH indexed paths, not
+  // just index 0.
+  assert.fieldEquals("ENSv2NamePath", leafOnePathId, "active", "false");
+  assert.fieldEquals("ENSv2NamePath", leafTwoPathId, "active", "false");
+});
+
 test("fresh non-.eth registration produces a queryable Domain row with correct parent chain", () => {
   dataSourceMock.setNetwork("sepolia");
 

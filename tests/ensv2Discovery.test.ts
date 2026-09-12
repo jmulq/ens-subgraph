@@ -162,3 +162,24 @@ test("handleProxyDeployed skips templating and creates an ENSv2HCA row, not an E
     Address.fromString(SENDER).toHexString()
   );
 });
+
+test("handleProxyDeployed is idempotent for a duplicate ProxyDeployed on the same address", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  let duplicateProxyAddress = "0x77777777777777777777777777777777777777aa";
+  let event = createProxyDeployedEvent(duplicateProxyAddress, USER_REGISTRY_IMPL);
+  handleProxyDeployed(event);
+  // Same address, same implementation, processed a second time -- e.g. a
+  // reorg replay. getOrCreateRegistry's own load-or-new guard must make
+  // this a no-op, not a second row or an error.
+  handleProxyDeployed(event);
+
+  let id = Address.fromString(duplicateProxyAddress).toHexString();
+  assert.fieldEquals("ENSv2Registry", id, "kind", "USER");
+  assert.fieldEquals(
+    "ENSv2Registry",
+    id,
+    "implementation",
+    Address.fromString(USER_REGISTRY_IMPL).toHexString()
+  );
+});

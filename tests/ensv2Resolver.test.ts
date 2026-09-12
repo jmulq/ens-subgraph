@@ -850,6 +850,88 @@ test("DataUpdated produces ENSv2ResolverRecordData with value populated -- the r
   assert.fieldEquals("ENSv2ResolverRecordData", id, "value", value.toHexString());
 });
 
+test("AddressUpdated on the same recordId+coinType twice overwrites the existing row instead of duplicating", () => {
+  let recordId = BigInt.fromI32(10);
+  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
+  let recordEntityId = resolverId.concat(bigIntHex32(recordId));
+  let coinType = BigInt.fromI32(60);
+  let firstAddr = Bytes.fromI32(111);
+  let secondAddr = Bytes.fromI32(222);
+  let id = recordEntityId.concat(bigIntHex32(coinType));
+
+  handleAddressUpdated(createAddressUpdatedEvent(recordId, coinType, firstAddr));
+  assert.fieldEquals("ENSv2ResolverAddress", id, "addressBytes", firstAddr.toHexString());
+
+  handleAddressUpdated(createAddressUpdatedEvent(recordId, coinType, secondAddr));
+  assert.fieldEquals("ENSv2ResolverAddress", id, "addressBytes", secondAddr.toHexString());
+  // Overwritten in place, not duplicated -- one ENSv2ResolverAddress row and
+  // one ENSv2ResolverRecord row (getOrCreateRecord's own load-or-new is
+  // exercised across both calls too, not just created once).
+  assert.entityCount("ENSv2ResolverAddress", 1);
+  assert.entityCount("ENSv2ResolverRecord", 1);
+});
+
+test("old-model and new-model events on the same resolver address don't cross-contaminate the shared ENSv2Resolver row", () => {
+  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
+
+  // Old model: NamedResource.
+  let resource = BigInt.fromI32(11);
+  let oldName = encodeLabel("karl");
+  handleNamedResource(createNamedResourceEvent(resource, oldName));
+
+  // New model: Linked, same resolver address.
+  let recordId = BigInt.fromI32(12);
+  let node = Bytes.fromI32(102);
+  let newName = encodeLabel("liam");
+  handleLinked(createLinkedEvent(recordId, node, newName));
+
+  // Exactly one ENSv2Resolver row for this address, shared by both models --
+  // not two separate rows, and each model's own entities are intact.
+  assert.entityCount("ENSv2Resolver", 1);
+  assert.assertNotNull(ENSv2Resolver.load(Bytes.fromHexString(resolverId)));
+
+  let oldId = resolverId.concat(bigIntHex32(resource)).concat(hexOf(Bytes.fromUTF8("NAME")));
+  assert.fieldEquals("ENSv2ResolverResource", oldId, "kind", "NAME");
+
+  let linkId = resolverId.concat(hexOf(node));
+  let recordEntityId = resolverId.concat(bigIntHex32(recordId));
+  assert.fieldEquals("ENSv2ResolverLink", linkId, "record", recordEntityId);
+  assert.assertNotNull(ENSv2ResolverRecord.load(Bytes.fromHexString(recordEntityId)));
+});
+
+test("namehashFromDnsEncoded folds every label already parsed correctly when a LATER label (not the first) is truncated", () => {
+  // "sub" then "eth", each well-formed, followed by a proper root
+  // terminator -- this is what the malformed version below should still
+  // fold down to for its first two labels.
+  let subLabel = Bytes.fromUTF8("sub");
+  let ethLabel = Bytes.fromUTF8("eth");
+  let wellFormedOut = new Uint8Array(1 + subLabel.length + 1 + ethLabel.length + 1);
+  let o = 0;
+  wellFormedOut[o++] = subLabel.length as u8;
+  for (let i = 0; i < subLabel.length; i++) wellFormedOut[o++] = subLabel[i];
+  wellFormedOut[o++] = ethLabel.length as u8;
+  for (let i = 0; i < ethLabel.length; i++) wellFormedOut[o++] = ethLabel[i];
+  wellFormedOut[o++] = 0;
+  let expected = namehashFromDnsEncoded(Bytes.fromUint8Array(wellFormedOut));
+
+  // Same first two labels, but the THIRD length byte (10) claims far more
+  // content than the 2 bytes actually left in the buffer -- a different
+  // code path from the first-label-truncated case already covered above,
+  // since offset has already advanced past two successfully-parsed labels.
+  let malformedOut = new Uint8Array(1 + subLabel.length + 1 + ethLabel.length + 1 + 2);
+  o = 0;
+  malformedOut[o++] = subLabel.length as u8;
+  for (let i = 0; i < subLabel.length; i++) malformedOut[o++] = subLabel[i];
+  malformedOut[o++] = ethLabel.length as u8;
+  for (let i = 0; i < ethLabel.length; i++) malformedOut[o++] = ethLabel[i];
+  malformedOut[o++] = 10; // claims 10 more content bytes
+  malformedOut[o++] = 0x78; // 'x'
+  malformedOut[o++] = 0x79; // 'y' -- only 2 bytes actually follow, not 10
+
+  let node = namehashFromDnsEncoded(Bytes.fromUint8Array(malformedOut));
+  assert.bytesEquals(expected, node);
+});
+
 test("ABIUpdated and InterfaceUpdated produce their own child rows keyed by recordId", () => {
   let recordId = BigInt.fromI32(9);
   let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
