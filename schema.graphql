@@ -501,7 +501,22 @@ type ENSv2Registry @entity(immutable: false) {
   discoveredAt: BigInt!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
+  # From PermissionedRegistry.URIUpdated (GitHub #73) — the registry-level
+  # token metadata URI template and the renderer contract computing it.
+  # Current-state only, like the sibling resolver/subregistry fields on
+  # ENSv2NameSlot — URIUpdated's own history isn't otherwise meaningful.
+  uri: String
+  uriRenderer: Bytes
 }
+# Two other PermissionedRegistry events were deliberately left unwired
+# (GitHub #73): RegistryCreated() fires from the same constructor path that
+# ProxyDeployed/bootstrapRegistry already use to create this row, so it adds
+# no information; URI(string,uint256) is part of the standard ERC1155
+# interface this contract implements but is never actually emitted anywhere
+# in its own source (confirmed on-chain: zero occurrences from RootRegistry
+# or ETHRegistry directly — the nonzero network-wide topic0 count is
+# collisions with unrelated ERC1155 contracts on the same chain, since
+# URI(string,uint256) is a very common signature).
 
 # HCA (Hierarchical Context Authority) proxies are deployed through the same
 # VerifiableFactory this subgraph already indexes for ENSv2Registry proxies

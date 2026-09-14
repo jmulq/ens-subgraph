@@ -17,6 +17,7 @@ import {
   handleTokenResource,
   handleTransferBatch,
   handleTransferSingle,
+  handleURIUpdated,
 } from "../src/ensv2Registry";
 import {
   ExpiryUpdated,
@@ -28,6 +29,7 @@ import {
   TokenResource,
   TransferBatch,
   TransferSingle,
+  URIUpdated,
 } from "../src/types/RootRegistry/PermissionedRegistry";
 import { ENSv2Registry, ENSv2Resource } from "../src/types/schema";
 
@@ -969,4 +971,65 @@ test("handleParentUpdated sets canonicalParentRegistry/Label, then clears both w
   }
   assert.assertTrue(!hasParentRegistry);
   assert.assertTrue(!hasParentLabel);
+});
+
+const createURIUpdatedEvent = (
+  registryAddress: string,
+  uri: string,
+  renderer: string
+): URIUpdated => {
+  let mockEvent = newMockEvent();
+  let event = new URIUpdated(
+    Address.fromString(registryAddress),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam("uri", ethereum.Value.fromString(uri))
+  );
+  event.parameters.push(
+    new ethereum.EventParam("renderer", ethereum.Value.fromAddress(Address.fromString(renderer)))
+  );
+  event.parameters.push(
+    new ethereum.EventParam("sender", ethereum.Value.fromAddress(Address.fromString(SENDER)))
+  );
+  return event;
+};
+
+// GitHub #73 -- PermissionedRegistry.URIUpdated wasn't wired at all before
+// this fix.
+test("handleURIUpdated sets uri/uriRenderer on the registry, and a later call overwrites both", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  const registryAddress = "0xdddddddddddddddddddddddddddddddddddddddd";
+  const rendererA = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const rendererB = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+  const firstEvent = createURIUpdatedEvent(registryAddress, "ipfs://first", rendererA);
+  handleURIUpdated(firstEvent);
+
+  assert.fieldEquals("ENSv2Registry", registryAddress, "uri", "ipfs://first");
+  assert.fieldEquals(
+    "ENSv2Registry",
+    registryAddress,
+    "uriRenderer",
+    Address.fromString(rendererA).toHexString()
+  );
+
+  const secondEvent = createURIUpdatedEvent(registryAddress, "ipfs://second", rendererB);
+  handleURIUpdated(secondEvent);
+
+  assert.fieldEquals("ENSv2Registry", registryAddress, "uri", "ipfs://second");
+  assert.fieldEquals(
+    "ENSv2Registry",
+    registryAddress,
+    "uriRenderer",
+    Address.fromString(rendererB).toHexString()
+  );
 });

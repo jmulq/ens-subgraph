@@ -381,6 +381,8 @@ dataSources:
           handler: handleEACRolesChanged
         - event: "ApprovalForAll(indexed address,indexed address,bool)"
           handler: handleENSv2ApprovalForAll
+        - event: "URIUpdated(string,address,indexed address)"
+          handler: handleURIUpdated
 
   - kind: ethereum/contract
     name: ETHRegistry

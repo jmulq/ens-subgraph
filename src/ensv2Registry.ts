@@ -75,6 +75,7 @@ import {
   TokenResource,
   TransferBatch,
   TransferSingle,
+  URIUpdated,
 } from "./types/RootRegistry/PermissionedRegistry";
 
 // Ensures an ENSv2Registry row exists for whichever data source (static
@@ -633,4 +634,20 @@ export function handleEACRolesChanged(event: EACRolesChanged): void {
     event.transaction.hash,
     event.logIndex
   );
+}
+
+// GitHub #73 -- PermissionedRegistry.setURI() updates the registry-level
+// token metadata URI/renderer; current-state fields only, matching the
+// resolver/subregistry pattern elsewhere in this file.
+export function handleURIUpdated(event: URIUpdated): void {
+  bootstrapRegistry(event.address, event.block);
+
+  let registry = ENSv2Registry.load(event.address);
+  if (registry == null) {
+    return;
+  }
+  registry.uri = event.params.uri;
+  registry.uriRenderer = event.params.renderer;
+  registry.updatedAtBlock = event.block.number;
+  registry.save();
 }
