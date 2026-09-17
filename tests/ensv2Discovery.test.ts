@@ -15,10 +15,10 @@ const IMPLEMENTATION = "0x22222222222222222222222222222222222222bb";
 // Must match ensv2Constants.ts's sepolia-network return values exactly —
 // deliberately hardcoded here (not imported) so a test breaks if that file's
 // constants ever drift, rather than tautologically always agreeing with them.
-const USER_REGISTRY_IMPL = "0x624a25d67b59d587752ebec8dded8827dae52050";
-const WRAPPER_REGISTRY_IMPL = "0x433f81a3e8921fc868ae1a04576f135d9a75b0f2";
-const PERMISSIONED_RESOLVER_IMPL = "0x9eae5c2730a7dd16bdd1dee6421a1b91e3b0365e";
-const STANDALONE_HCA_IMPL = "0xaa761541620fc1a42bb701a26a9f107a9df1e904";
+const USER_REGISTRY_IMPL = "0xA80338aAA8D23831cEa25E858D1774534aBb0263";
+const WRAPPER_REGISTRY_IMPL = "0x2741543c3B14640b97bC70a233318032f7E35bAC";
+const PERMISSIONED_RESOLVER_IMPL = "0x14F09Fd05d4585759e54844DC9B00147131Cf243";
+const STANDALONE_HCA_IMPL = "0xdF4a24c42921810fed9363b07292E9152578D706";
 
 const createProxyDeployedEvent = (
   proxyAddress: string,

@@ -312,9 +312,9 @@ dataSources:
     name: RootRegistry
     network: mainnet
     source:
-      address: "0x8115186e8f2e0B0281E86Ab91f0f48Ba90364354"
+      address: "0x9703DBD26dAB89504490994138cF2c575251a9cE"
       abi: PermissionedRegistry
-      startBlock: 11383818
+      startBlock: 11708988
     # Anchored — RootRegistry, ETHRegistry, and the ENSv2Registry template
     # below all bind the same PermissionedRegistry contract type and share
     # this exact mapping (audit finding 14: this was previously duplicated
@@ -388,18 +388,18 @@ dataSources:
     name: ETHRegistry
     network: mainnet
     source:
-      address: "0xbDC85dD5b15D7ECb354Cd7cb6f2C50B4f2C4f0e2"
+      address: "0x657eA849311d3D5823348ddEd7C2AaAFb3EDE09E"
       abi: PermissionedRegistry
-      startBlock: 11383897
+      startBlock: 11709066
     mapping: *ensv2RegistryMapping
 
   - kind: ethereum/contract
     name: ETHRegistrar
     network: mainnet
     source:
-      address: "0xa88553F454b77203b0D036a05C894d555EAaA2cc"
+      address: "0xAbe76F6C8DFcEd81AA5A2bB8034202A7136b94ca"
       abi: ETHRegistrar
-      startBlock: 11383914
+      startBlock: 11709083
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -424,9 +424,9 @@ dataSources:
     name: VerifiableFactory
     network: mainnet
     source:
-      address: "0x10dc6333CDFE1fCEf624c6e0A8221B91804cD7EF"
+      address: "0x9e726Eb570beb6BCEb495AB8cdA7df517d4e841C"
       abi: VerifiableFactory
-      startBlock: 11383823
+      startBlock: 11708995
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

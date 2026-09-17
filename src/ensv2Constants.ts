@@ -15,8 +15,8 @@ export function getMigrationControllers(): Address[] {
   let network = dataSource.network();
   if (network == "sepolia") {
     return [
-      Address.fromString("0x5c39e36A69a9897f08954C71acB1f36e0bD4f409"), // LockedMigrationController
-      Address.fromString("0x2fCf83232B93bd29C59db18AAa1d4b62E9F9fc73"), // UnlockedMigrationController
+      Address.fromString("0xab1B57C6eE5E91e6090595c0AF14CB9B8bc7773f"), // LockedMigrationController
+      Address.fromString("0x7ed171bb143a905F56105e4eA146543Ecb122F55"), // UnlockedMigrationController
     ];
   }
   log.critical(
@@ -73,7 +73,7 @@ export function getV2GracePeriod(): BigInt {
 export function getRootRegistryAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0x8115186e8f2e0B0281E86Ab91f0f48Ba90364354");
+    return Address.fromString("0x9703DBD26dAB89504490994138cF2c575251a9cE");
   }
   log.critical(
     "getRootRegistryAddress: no RootRegistry address configured for network '{}'. Refusing to silently return the zero address (which would collapse every registry-id/kind lookup onto one bogus bucket) — add the real address for this network or fix the manifest's network label.",
@@ -85,7 +85,7 @@ export function getRootRegistryAddress(): Address {
 export function getEthRegistryAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0xbDC85dD5b15D7ECb354Cd7cb6f2C50B4f2C4f0e2");
+    return Address.fromString("0x657eA849311d3D5823348ddEd7C2AaAFb3EDE09E");
   }
   log.critical(
     "getEthRegistryAddress: no ETHRegistry address configured for network '{}'. Refusing to silently return the zero address (which would collapse every ENSv2Registration id onto one bogus bucket) — add the real address for this network or fix the manifest's network label.",
@@ -109,7 +109,7 @@ export function getEthRegistryAddress(): Address {
 export function getUserRegistryImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0x624a25d67b59d587752ebec8dded8827dae52050");
+    return Address.fromString("0xA80338aAA8D23831cEa25E858D1774534aBb0263");
   }
   log.critical(
     "getUserRegistryImplAddress: no UserRegistry implementation address configured for network '{}'. Refusing to silently return the zero address (which would misclassify every USER registry as UNKNOWN) — add the real address for this network or fix the manifest's network label.",
@@ -121,7 +121,7 @@ export function getUserRegistryImplAddress(): Address {
 export function getWrapperRegistryImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0x433f81a3e8921fc868ae1a04576f135d9a75b0f2");
+    return Address.fromString("0x2741543c3B14640b97bC70a233318032f7E35bAC");
   }
   log.critical(
     "getWrapperRegistryImplAddress: no WrapperRegistry implementation address configured for network '{}'. Refusing to silently return the zero address (which would misclassify every WRAPPER registry as UNKNOWN) — add the real address for this network or fix the manifest's network label.",
@@ -133,7 +133,7 @@ export function getWrapperRegistryImplAddress(): Address {
 export function getPermissionedResolverImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0x9eae5c2730a7dd16bdd1dee6421a1b91e3b0365e");
+    return Address.fromString("0x14F09Fd05d4585759e54844DC9B00147131Cf243");
   }
   log.critical(
     "getPermissionedResolverImplAddress: no PermissionedResolver implementation address configured for network '{}'. Refusing to silently return the zero address (which would fail to recognize resolver ProxyDeployed events, creating a bogus ENSv2Registry row for each one) — add the real address for this network or fix the manifest's network label.",
@@ -153,7 +153,7 @@ export function getPermissionedResolverImplAddress(): Address {
 export function getStandaloneHCAImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
-    return Address.fromString("0xaa761541620fc1a42bb701a26a9f107a9df1e904");
+    return Address.fromString("0xdF4a24c42921810fed9363b07292E9152578D706");
   }
   log.critical(
     "getStandaloneHCAImplAddress: no StandaloneHCA implementation address configured for network '{}'. Refusing to silently return the zero address (which would fail to recognize HCA ProxyDeployed events, creating a bogus ENSv2Registry row for each one) — add the real address for this network or fix the manifest's network label.",
