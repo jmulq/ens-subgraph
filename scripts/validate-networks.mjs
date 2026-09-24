@@ -48,10 +48,20 @@ function parseDataSources(yamlText) {
   const lines = yamlText.split("\n");
   const sources = [];
   let current = null;
+  let inTemplates = false;
   for (const line of lines) {
+    if (/^templates:\s*$/.test(line)) {
+      inTemplates = true;
+    }
     if (/^\s{2}-\s+kind:\s+ethereum\/contract\s*$/.test(line)) {
       if (current) sources.push(current);
-      current = { name: null, network: null, address: null };
+      current = {
+        name: null,
+        network: null,
+        address: null,
+        startBlock: null,
+        isTemplate: inTemplates,
+      };
       continue;
     }
     if (!current) continue;
@@ -62,6 +72,8 @@ function parseDataSources(yamlText) {
       current.network = m[1];
     } else if ((m = line.match(/^\s{6}address:\s*"?([0-9a-fA-Fx]+)"?\s*$/))) {
       current.address = m[1].toLowerCase();
+    } else if ((m = line.match(/^\s{6}startBlock:\s*(\d+)\s*$/))) {
+      current.startBlock = Number(m[1]);
     }
   }
   if (current) sources.push(current);
@@ -100,15 +112,74 @@ function checkSubgraphYamlVsNetworksJson() {
       continue;
     }
 
-    if (src.address && entry.address && entry.address.toLowerCase() !== src.address) {
-      problems.push(
-        `${src.name}: subgraph.yaml hardcodes ${src.address} for network "${src.network}", but networks.json's "${src.network}" entry says ${entry.address.toLowerCase()}.`
-      );
+    if (src.address) {
+      if (!entry.address) {
+        problems.push(
+          `${src.name}: subgraph.yaml has address ${src.address}, but networks.json's "${src.network}" entry has no address.`
+        );
+      } else if (entry.address.toLowerCase() !== src.address) {
+        problems.push(
+          `${src.name}: subgraph.yaml hardcodes ${src.address} for network "${src.network}", but networks.json's "${src.network}" entry says ${entry.address.toLowerCase()}.`
+        );
+      }
+    }
+    if (src.startBlock !== null) {
+      if (entry.startBlock === undefined) {
+        problems.push(
+          `${src.name}: subgraph.yaml starts at block ${src.startBlock}, but networks.json's "${src.network}" entry has no startBlock.`
+        );
+      } else if (entry.startBlock !== src.startBlock) {
+        problems.push(
+          `${src.name}: subgraph.yaml starts at block ${src.startBlock} for network "${src.network}", but networks.json says ${entry.startBlock}.`
+        );
+      }
     }
   }
 
   console.log(
     `[1/2] subgraph.yaml vs networks.json: ${sources.length} data source(s)/template(s) checked.`
+  );
+  return problems;
+}
+
+function checkRequestedNetwork(requestedNetwork) {
+  if (!requestedNetwork) return [];
+
+  const yamlText = readFileSync(join(repoRoot, "subgraph.yaml"), "utf8");
+  const networks = JSON.parse(
+    readFileSync(join(repoRoot, "networks.json"), "utf8")
+  );
+  const sources = parseDataSources(yamlText);
+  const target = networks[requestedNetwork];
+  if (!target) {
+    return [`requested deployment network "${requestedNetwork}" has no networks.json block.`];
+  }
+
+  const problems = [];
+  for (const src of sources) {
+    // Templates have no static chain position. Addressless data sources do,
+    // and still require a target-network startBlock.
+    if (!src.name || src.isTemplate) continue;
+    const entry = target[src.name];
+    if (!entry) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" has no complete networks.json entry. Deployment is disabled until its real address/start block is configured.`
+      );
+      continue;
+    }
+    if (src.address !== null && !entry.address) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" is missing its address.`
+      );
+    }
+    if (entry.startBlock === undefined) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" is missing its startBlock.`
+      );
+    }
+  }
+  console.log(
+    `[target] ${requestedNetwork}: ${sources.length} data source(s)/template(s) checked for deployment completeness.`
   );
   return problems;
 }
@@ -218,8 +289,17 @@ function checkEnsv2ConstantsVsContractsV2() {
 }
 
 function main() {
+  const networkArgIndex = process.argv.indexOf("--network");
+  const requestedNetwork =
+    networkArgIndex === -1 ? null : process.argv[networkArgIndex + 1];
+  if (networkArgIndex !== -1 && !requestedNetwork) {
+    console.error("validate-networks: --network requires a network name.");
+    process.exit(2);
+  }
   const problems = [
-    ...checkSubgraphYamlVsNetworksJson(),
+    ...(requestedNetwork
+      ? checkRequestedNetwork(requestedNetwork)
+      : checkSubgraphYamlVsNetworksJson()),
     ...checkEnsv2ConstantsVsContractsV2(),
   ];
 
@@ -227,7 +307,7 @@ function main() {
     console.error(`\nvalidate-networks: ${problems.length} problem(s) found:\n`);
     for (const p of problems) console.error(`  - ${p}`);
     console.error(
-      "\nSee docs/ENSv2_Subgraph_Audit.md (Finding 1) / issue #27 for check 1's incident, and issue #34 for check 2's."
+      "\nSee ../docs/ensv2-sepolia-2026-09-15-review.md and ../docs/ensv2-implementation-plan.md for the deployment-safety decision."
     );
     process.exit(1);
   }

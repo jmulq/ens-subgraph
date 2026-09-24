@@ -1,5 +1,5 @@
-// Minimal smoke-test layer for every handler wired from
-// src/ensv2Resolver.ts (old- and new-model PermissionedResolver events).
+// Minimal smoke-test layer for every deployed PermissionedResolver handler
+// wired from src/ensv2Resolver.ts.
 // Independent of and redundant with ensv2Resolver.test.ts's richer
 // behavioral tests -- one mock-event-per-handler baseline only.
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
@@ -13,37 +13,27 @@ import {
 import {
   handleABIUpdated,
   handleAddressUpdated,
-  handleAliasChanged,
   handleContenthashUpdated,
-  handleDataChanged,
   handleEACRolesChanged,
   handleInterfaceUpdated,
   handleLinked,
   handleNameUpdated,
-  handleNamedAddrResource,
-  handleNamedDataResource,
-  handleNamedResource,
-  handleNamedTextResource,
   handleRecordDataUpdated,
+  handleResourceArgument,
   handleResolverCreated,
   handleTextUpdated,
 } from "../src/ensv2Resolver";
 import {
   ABIUpdated,
   AddressUpdated,
-  AliasChanged,
   ContenthashUpdated,
-  DataChanged,
   DataUpdated,
   EACRolesChanged,
   InterfaceUpdated,
   Linked,
   NameUpdated,
-  NamedAddrResource,
-  NamedDataResource,
-  NamedResource,
-  NamedTextResource,
   ResolverCreated,
+  ResourceArgument,
   TextUpdated,
 } from "../src/types/PermissionedResolver/PermissionedResolver";
 
@@ -77,103 +67,6 @@ function newEventLike<T>(
 
 afterEach(() => {
   clearStore();
-});
-
-test("smoke: handleAliasChanged creates an ENSv2ResolverAlias row", () => {
-  let event = newEventLike<AliasChanged>(
-    (a, li, tli, lt, b, t, p, r) => new AliasChanged(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("indexedFromName", ethereum.Value.fromBytes(SMOKE_NAME))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("indexedToName", ethereum.Value.fromBytes(SMOKE_NAME))
-  );
-  event.parameters.push(new ethereum.EventParam("fromName", ethereum.Value.fromBytes(SMOKE_NAME)));
-  event.parameters.push(new ethereum.EventParam("toName", ethereum.Value.fromBytes(SMOKE_NAME)));
-  handleAliasChanged(event);
-  assert.entityCount("ENSv2ResolverAlias", 1);
-});
-
-test("smoke: handleNamedResource creates an ENSv2ResolverResource row of kind NAME", () => {
-  let event = newEventLike<NamedResource>(
-    (a, li, tli, lt, b, t, p, r) => new NamedResource(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("resource", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
-  );
-  event.parameters.push(new ethereum.EventParam("name", ethereum.Value.fromBytes(SMOKE_NAME)));
-  handleNamedResource(event);
-  assert.entityCount("ENSv2ResolverResource", 1);
-});
-
-test("smoke: handleNamedTextResource creates an ENSv2ResolverResource row of kind TEXT", () => {
-  let event = newEventLike<NamedTextResource>(
-    (a, li, tli, lt, b, t, p, r) => new NamedTextResource(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("resource", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(2)))
-  );
-  event.parameters.push(new ethereum.EventParam("name", ethereum.Value.fromBytes(SMOKE_NAME)));
-  event.parameters.push(
-    new ethereum.EventParam("keyHash", ethereum.Value.fromFixedBytes(Bytes.fromI32(1)))
-  );
-  event.parameters.push(new ethereum.EventParam("key", ethereum.Value.fromString("smokekey")));
-  handleNamedTextResource(event);
-  assert.entityCount("ENSv2ResolverResource", 1);
-});
-
-test("smoke: handleNamedDataResource creates an ENSv2ResolverResource row of kind DATA", () => {
-  let event = newEventLike<NamedDataResource>(
-    (a, li, tli, lt, b, t, p, r) => new NamedDataResource(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("resource", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(3)))
-  );
-  event.parameters.push(new ethereum.EventParam("name", ethereum.Value.fromBytes(SMOKE_NAME)));
-  event.parameters.push(
-    new ethereum.EventParam("keyHash", ethereum.Value.fromFixedBytes(Bytes.fromI32(1)))
-  );
-  event.parameters.push(new ethereum.EventParam("key", ethereum.Value.fromString("smokekey")));
-  handleNamedDataResource(event);
-  assert.entityCount("ENSv2ResolverResource", 1);
-});
-
-test("smoke: handleNamedAddrResource creates an ENSv2ResolverResource row of kind ADDR", () => {
-  let event = newEventLike<NamedAddrResource>(
-    (a, li, tli, lt, b, t, p, r) => new NamedAddrResource(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("resource", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(4)))
-  );
-  event.parameters.push(new ethereum.EventParam("name", ethereum.Value.fromBytes(SMOKE_NAME)));
-  event.parameters.push(
-    new ethereum.EventParam("coinType", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(60)))
-  );
-  handleNamedAddrResource(event);
-  assert.entityCount("ENSv2ResolverResource", 1);
-});
-
-test("smoke: handleDataChanged creates an ENSv2ResolverData row", () => {
-  let event = newEventLike<DataChanged>(
-    (a, li, tli, lt, b, t, p, r) => new DataChanged(a, li, tli, lt, b, t, p, r)
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("node", ethereum.Value.fromFixedBytes(Bytes.fromI32(1)))
-  );
-  event.parameters.push(new ethereum.EventParam("indexedKey", ethereum.Value.fromString("smokekey")));
-  event.parameters.push(new ethereum.EventParam("key", ethereum.Value.fromString("smokekey")));
-  event.parameters.push(
-    new ethereum.EventParam("indexedData", ethereum.Value.fromBytes(Bytes.fromI32(1)))
-  );
-  handleDataChanged(event);
-  assert.entityCount("ENSv2ResolverData", 1);
 });
 
 test("smoke: handleEACRolesChanged creates an ENSv2RoleAssignment row", () => {
@@ -212,6 +105,25 @@ test("smoke: handleResolverCreated creates only the ENSv2Resolver row", () => {
     "address",
     Address.fromString(RESOLVER).toHexString()
   );
+});
+
+test("smoke: handleResourceArgument creates resolver role metadata", () => {
+  let event = newEventLike<ResourceArgument>(
+    (a, li, tli, lt, b, t, p, r) =>
+      new ResourceArgument(a, li, tli, lt, b, t, p, r)
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam(
+      "resource",
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("arg", ethereum.Value.fromBytes(Bytes.fromUTF8("avatar")))
+  );
+  handleResourceArgument(event);
+  assert.entityCount("ENSv2ResolverResourceArgument", 1);
 });
 
 test("smoke: handleLinked creates an ENSv2ResolverLink and its ENSv2ResolverRecord", () => {

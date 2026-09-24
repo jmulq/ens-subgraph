@@ -38,11 +38,13 @@ import {
   updateEthDomainOwner,
 } from "./ensv2Domain";
 import { processEACRolesChanged } from "./ensv2Roles";
+import { syncRegistrationFromSlot } from "./ensv2Registrar";
 import { processApprovalForAll } from "./accessControl";
 import {
   handleParentUpdated as handleParentUpdatedPaths,
   handleResolverUpdated as handleResolverUpdatedPaths,
   handleSubregistryUpdated as handleSubregistryUpdatedPaths,
+  clearProjectedDomainResolversForSlot,
   materializePathsForSlot,
 } from "./ensv2Paths";
 import {
@@ -89,6 +91,42 @@ function bootstrapRegistry(address: Address, block: ethereum.Block): void {
   if (kind == "ROOT") {
     getOrCreateRootNamespace(registry.id, block);
   }
+}
+
+// End the current token/resource ownership incarnation while retaining its
+// entities as historical current-state rows. The stable slot itself remains
+// reusable for a later registration.
+function deactivateSlotIncarnation(
+  slot: ENSv2NameSlot,
+  timestamp: BigInt,
+  blockNumber: BigInt
+): void {
+  let currentTokenId = slot.currentToken;
+  if (currentTokenId) {
+    let token = ENSv2Token.load(currentTokenId!);
+    if (token != null) {
+      token.active = false;
+      token.owner = null;
+      token.updatedAtBlock = blockNumber;
+      token.save();
+    }
+  }
+
+  let currentResourceId = slot.currentResource;
+  if (currentResourceId) {
+    let resource = ENSv2Resource.load(currentResourceId!);
+    if (resource != null) {
+      resource.active = false;
+      resource.endedAt = timestamp;
+      resource.updatedAtBlock = blockNumber;
+      resource.save();
+    }
+  }
+
+  slot.currentToken = null;
+  slot.currentResource = null;
+  slot.owner = null;
+  slot.registrant = null;
 }
 
 export function handleLabelRegistered(event: LabelRegistered): void {
@@ -143,6 +181,8 @@ export function handleLabelRegistered(event: LabelRegistered): void {
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
+
+  clearProjectedDomainResolversForSlot(slot);
 
   let history = new ENSv2LabelRegistered(createEventID(event));
   history.slot = slot.id;
@@ -222,9 +262,11 @@ export function handleLabelUnregistered(event: LabelUnregistered): void {
     return;
   }
 
-  // status is the authoritative signal; owner/registrant/expiryDate are left
-  // as last-known values, not nulled.
+  // AVAILABLE means there is no active native owner or resource incarnation.
+  // Label/labelhash remain on the stable slot as identity/history metadata.
   slot.status = "AVAILABLE";
+  slot.expiryDate = event.block.timestamp;
+  deactivateSlotIncarnation(slot, event.block.timestamp, event.block.number);
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
@@ -293,6 +335,13 @@ export function handleExpiryUpdated(event: ExpiryUpdated): void {
   // v1-derived values — so do nothing there.
   let isEth = slot.registry.equals(getEthRegistryAddress());
   if (isEth && slot.status == "REGISTERED") {
+    // ExpiryUpdated is the canonical registry-side renewal signal. Keep the
+    // registrar-enriched native row in sync even when no ETHRegistrar
+    // NameRenewed event accompanies it (for example, a direct registry
+    // renewal). The REGISTERED guard preserves the RESERVED/v1 behavior
+    // described above.
+    syncRegistrationFromSlot(slot);
+
     let registration = Registration.load(slot.labelhash.toHexString());
     if (registration != null) {
       registration.expiryDate = event.params.newExpiry;
@@ -420,6 +469,11 @@ export function handleTokenResource(event: TokenResource): void {
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
+
+  // Complete the registrar enrichment if NameRegistered was observed before
+  // this registry-side resource event. For non-ETH registries the helper is
+  // deliberately a no-op.
+  syncRegistrationFromSlot(slot);
 }
 
 export function handleTokenRegenerated(event: TokenRegenerated): void {
@@ -462,6 +516,14 @@ export function handleTokenRegenerated(event: TokenRegenerated): void {
   if (oldTokenSlotId) {
     let slot = ENSv2NameSlot.load(oldTokenSlotId!);
     if (slot != null) {
+      let slotOwner = slot.owner;
+      if (slotOwner) {
+        // TransferSingle burn runs before TokenRegenerated and correctly
+        // clears the old token's owner. The still-registered slot remains
+        // authoritative for the replacement token.
+        newToken.owner = slotOwner!;
+        newToken.save();
+      }
       slot.currentToken = newToken.id;
       // Every other slot-touching handler in this file sets updatedAt
       // alongside updatedAtBlock; this was the one path that didn't,
@@ -515,7 +577,14 @@ function makeTokenTransfer(
     token.createdAtBlock = block.number;
   }
   let toAccount = createOrLoadAccount(to);
-  token.owner = toAccount.id;
+  let isBurn = to.equals(Address.zero());
+  if (isBurn) {
+    token.owner = null;
+    token.active = false;
+  } else {
+    token.owner = toAccount.id;
+    token.active = true;
+  }
   token.updatedAtBlock = block.number;
   token.save();
 
@@ -523,12 +592,22 @@ function makeTokenTransfer(
   if (tokenSlotId) {
     let slot = ENSv2NameSlot.load(tokenSlotId!);
     if (slot != null) {
-      slot.owner = toAccount.id;
-      // Was previously only ever set at registration time (handleLabelRegistered)
-      // and never revisited on transfer, while the structurally identical
-      // sibling field `owner` stayed live — froze at the original registrant
-      // forever after the first transfer (audit finding 8).
-      slot.registrant = toAccount.id;
+      let expiry = slot.expiryDate;
+      let isExpiredBurn = false;
+      if (isBurn && expiry) {
+        isExpiredBurn = expiry!.le(block.timestamp);
+      }
+      let isLifecycleBurn =
+        isBurn && (slot.status == "AVAILABLE" || isExpiredBurn);
+      if (isLifecycleBurn) {
+        // Covers both unregister's LabelUnregistered -> burn order and the
+        // pre-LabelRegistered burn used when replacing an expired name.
+        slot.status = "AVAILABLE";
+        deactivateSlotIncarnation(slot, block.timestamp, block.number);
+      } else if (!isBurn) {
+        slot.owner = toAccount.id;
+        slot.registrant = toAccount.id;
+      }
       slot.updatedAtBlock = block.number;
       slot.save();
 
@@ -541,7 +620,10 @@ function makeTokenTransfer(
       // stated purpose of keeping legacy consumers working unchanged
       // (audit finding 8).
       let isEth = slot.registry.equals(getEthRegistryAddress());
-      if (isEth) {
+      // A regeneration burn is an implementation detail and must not zero
+      // legacy ownership. Lifecycle burns retain the legacy zero-address
+      // convention required by the existing non-null schema.
+      if (isEth && (!isBurn || isLifecycleBurn)) {
         let domainId = getEthDomainId(slot);
         if (domainId) {
           if (slot.migratedFromV1) {

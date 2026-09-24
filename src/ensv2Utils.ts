@@ -32,6 +32,38 @@ export function tokenEntityId(registry: Bytes, tokenId: BigInt): Bytes {
   return Bytes.fromByteArray(concat(registry, uint256ToByteArray(tokenId)));
 }
 
+export function resolverRecordId(resolver: Bytes, recordId: BigInt): Bytes {
+  return Bytes.fromByteArray(concat(resolver, uint256ToByteArray(recordId)));
+}
+
+export function resolverLinkId(resolver: Bytes, node: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(resolver, node));
+}
+
+export function resolverMembershipId(record: Bytes, node: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(record, node));
+}
+
+export function resolverLinkIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
+}
+
+export function resolverAddressId(record: Bytes, coinType: BigInt): Bytes {
+  return Bytes.fromByteArray(concat(record, uint256ToByteArray(coinType)));
+}
+
+export function resolverAddressIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
+}
+
+export function resolverTextId(record: Bytes, keyHash: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(record, keyHash));
+}
+
+export function resolverTextIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
+}
+
 // Port of LibLabel.withVersion(anyId, 0) from contracts-v2's
 // contracts/src/utils/LibLabel.sol:
 //   withVersion(anyId, versionId) = anyId ^ uint32(anyId) ^ versionId

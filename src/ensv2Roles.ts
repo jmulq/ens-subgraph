@@ -1,14 +1,18 @@
 // Shared EACRolesChanged handling — identical event
 // signature on PermissionedRegistry and PermissionedResolver, but distinct
 // generated TypeScript classes (different codegen paths) and AssemblyScript
-// has no union types (same constraint hit in Phase 7 for
-// NamedTextResource/NamedDataResource), so this takes primitives rather
+// has no union types, so this takes primitives rather
 // than either event class; ensv2Registry.ts and ensv2Resolver.ts's
 // handleEACRolesChanged are both thin wrappers over this.
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { concat, createOrLoadAccount, uint256ToByteArray } from "./utils";
 import { resourceId } from "./ensv2Utils";
-import { ENSv2Resource, ENSv2RoleAssignment, ENSv2RoleChange } from "./types/schema";
+import {
+  ENSv2ResolverResourceArgument,
+  ENSv2Resource,
+  ENSv2RoleAssignment,
+  ENSv2RoleChange,
+} from "./types/schema";
 
 export function processEACRolesChanged(
   contract: Address,
@@ -61,6 +65,12 @@ export function processEACRolesChanged(
   let resourceEntity = ENSv2Resource.load(resourceId(contractId, resource));
   if (resourceEntity != null) {
     assignment.resourceEntity = resourceEntity.id;
+  }
+  let resourceArgument = ENSv2ResolverResourceArgument.load(
+    resourceId(contractId, resource)
+  );
+  if (resourceArgument != null) {
+    assignment.resourceArgument = resourceArgument.id;
   }
   assignment.roleBitmap = newRoleBitmap;
   assignment.updatedAtBlock = block.number;

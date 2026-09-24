@@ -33,6 +33,10 @@ import {
 } from "./ensv2Utils";
 import { getOrCreateRegistry } from "./ensv2Discovery";
 import { getOrCreateResolver } from "./ensv2Resolver";
+import {
+  attachDomainResolver,
+  clearDomainResolver,
+} from "./ensv2ResolverProjection";
 import { projectPathToDomain } from "./ensv2Domain";
 import {
   ENSv2NamePath,
@@ -65,6 +69,25 @@ function appendSlotPathIndex(slot: ENSv2NameSlot, path: ENSv2NamePath): void {
 
   slot.pathCount = slot.pathCount + 1;
   slot.save();
+}
+
+// A registration silently resets its slot resolver even when no
+// ResolverUpdated(..., address(0)) event is emitted. Clear every previously
+// materialised compatibility Domain before any later same-transaction event
+// can attach a new resolver.
+export function clearProjectedDomainResolversForSlot(
+  slot: ENSv2NameSlot,
+): void {
+  for (let i = 0; i < slot.pathCount; i++) {
+    let pathIndex = ENSv2SlotPathIndex.load(slotPathIndexId(slot.id, i));
+    if (pathIndex == null) {
+      continue;
+    }
+    let path = ENSv2NamePath.load(pathIndex.path);
+    if (path != null) {
+      clearDomainResolver(path.namehash);
+    }
+  }
 }
 
 function appendPathNamespaceIndex(
@@ -475,6 +498,30 @@ export function handleResolverUpdated(event: ResolverUpdated): void {
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
+
+  // Keep the existing compatibility projection synchronized with the native
+  // slot. The bounded path index deliberately excludes late-linked names.
+  for (let i = 0; i < slot.pathCount; i++) {
+    let pathIndex = ENSv2SlotPathIndex.load(slotPathIndexId(slot.id, i));
+    if (pathIndex == null) {
+      continue;
+    }
+    let path = ENSv2NamePath.load(pathIndex.path);
+    if (path == null) {
+      continue;
+    }
+    if (!path.active) {
+      continue;
+    }
+    if (path.domain == null) {
+      continue;
+    }
+    if (isZeroAddress(event.params.resolver)) {
+      clearDomainResolver(path.namehash);
+    } else {
+      attachDomainResolver(event.params.resolver, path.namehash);
+    }
+  }
 
   let history = new ENSv2ResolverUpdate(createEventID(event));
   history.slot = slot.id;

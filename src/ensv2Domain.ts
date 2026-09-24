@@ -27,6 +27,7 @@ import {
   WrappedDomain,
 } from "./types/schema";
 import { LabelRegistered } from "./types/RootRegistry/PermissionedRegistry";
+import { syncRegistrationFromSlot } from "./ensv2Registrar";
 
 // Recovers a slot's namehash (Domain.id) without a ENSv2NamePath in hand —
 // needed at transfer time (Phase 6), when only the slot is available.
@@ -242,6 +243,10 @@ export function projectPathToDomain(
 
   if (isEth) {
     syncEthRegistration(slot, path, event, isV1Migration);
+    // NameRegistered normally follows the registry events in the deployed
+    // registrar, but keeping this reconciliation here makes fixtures and
+    // replays with the opposite ordering converge to the same native row.
+    syncRegistrationFromSlot(slot);
     if (isV1Migration) {
       correctMigratedLegacyOwner(domain.id, slot.labelhash.toHexString(), ownerId!);
     }

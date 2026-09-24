@@ -31,7 +31,12 @@ import {
   TransferSingle,
   URIUpdated,
 } from "../src/types/RootRegistry/PermissionedRegistry";
-import { ENSv2Registry, ENSv2Resource } from "../src/types/schema";
+import {
+  ENSv2NameSlot,
+  ENSv2Registry,
+  ENSv2Resource,
+  ENSv2Token,
+} from "../src/types/schema";
 
 const ROOT_REGISTRY = "0x9703DBD26dAB89504490994138cF2c575251a9cE";
 const ETH_REGISTRY = "0x657eA849311d3D5823348ddEd7C2AaAFb3EDE09E";
@@ -536,7 +541,7 @@ test("reservation sets status RESERVED and creates no history entity", () => {
   assert.notInStore("ENSv2LabelRegistered", historyId);
 });
 
-test("unregistration flips status to AVAILABLE, keeps stale fields, records history, never deletes the slot", () => {
+test("LabelUnregistered followed by burn clears active native ownership and incarnation state", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let registryId = Address.fromString(REGISTRY_UNREGISTRATION).toHexString();
@@ -547,24 +552,56 @@ test("unregistration flips status to AVAILABLE, keeps stale fields, records hist
     "bob"
   );
   handleLabelRegistered(registerEvent);
+  let mintEvent = createTransferSingleEvent(
+    REGISTRY_UNREGISTRATION,
+    tokenId,
+    "0x0000000000000000000000000000000000000000",
+    OWNER
+  );
+  handleTransferSingle(mintEvent);
+  let resource = BigInt.fromI32(55);
+  handleTokenResource(
+    createTokenResourceEvent(REGISTRY_UNREGISTRATION, tokenId, resource)
+  );
 
   let unregisterEvent = createLabelUnregisteredEvent(
     REGISTRY_UNREGISTRATION,
     tokenId
   );
   handleLabelUnregistered(unregisterEvent);
+  handleTransferSingle(
+    createTransferSingleEvent(
+      REGISTRY_UNREGISTRATION,
+      tokenId,
+      OWNER,
+      "0x0000000000000000000000000000000000000000"
+    )
+  );
 
   let slotId = registryId.concat(bigIntHex32(BigInt.zero()));
   assert.fieldEquals("ENSv2NameSlot", slotId, "status", "AVAILABLE");
-  // stale fields from the registration are left as last-known values, not
-  // nulled
+  // Stable identity remains, active ownership/incarnation does not.
   assert.fieldEquals("ENSv2NameSlot", slotId, "label", "bob");
-  assert.fieldEquals(
-    "ENSv2NameSlot",
-    slotId,
-    "owner",
-    Address.fromString(OWNER).toHexString()
-  );
+  let slot = ENSv2NameSlot.load(Bytes.fromHexString(slotId));
+  let slotHasActiveState = true;
+  if (slot != null) {
+    slotHasActiveState =
+      !!slot.owner ||
+      !!slot.registrant ||
+      !!slot.currentToken ||
+      !!slot.currentResource;
+  }
+  assert.assertTrue(slot != null && !slotHasActiveState);
+
+  let tokenIdHex = registryId.concat(bigIntHex32(tokenId));
+  let token = ENSv2Token.load(Bytes.fromHexString(tokenIdHex));
+  let tokenStillOwned = true;
+  if (token != null) {
+    tokenStillOwned = token.active || !!token.owner;
+  }
+  assert.assertTrue(token != null && !tokenStillOwned);
+  let resourceEntityId = registryId.concat(bigIntHex32(resource));
+  assert.fieldEquals("ENSv2Resource", resourceEntityId, "active", "false");
 
   let historyId = "0x".concat(bigIntHex32(unregisterEvent.block.number)).concat(bigIntHex32(unregisterEvent.logIndex));
   assert.fieldEquals("ENSv2LabelUnregistered", historyId, "slot", slotId);
@@ -622,6 +659,65 @@ test("re-registration after unregistration reuses the same slot and sets isReReg
 
   let historyId = "0x".concat(bigIntHex32(secondRegisterEvent.block.number)).concat(bigIntHex32(secondRegisterEvent.logIndex));
   assert.fieldEquals("ENSv2LabelRegistered", historyId, "isReRegistration", "true");
+});
+
+test("expired-name replacement burn clears the old incarnation before LabelRegistered restores ownership", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  let registryId = Address.fromString(REGISTRY_REREGISTRATION).toHexString();
+  let oldTokenId = BigInt.fromI32(1);
+  handleLabelRegistered(
+    createLabelRegisteredEvent(REGISTRY_REREGISTRATION, oldTokenId, "expired")
+  );
+  handleTransferSingle(
+    createTransferSingleEvent(
+      REGISTRY_REREGISTRATION,
+      oldTokenId,
+      "0x0000000000000000000000000000000000000000",
+      OWNER
+    )
+  );
+  handleTokenResource(
+    createTokenResourceEvent(
+      REGISTRY_REREGISTRATION,
+      oldTokenId,
+      BigInt.fromI32(88)
+    )
+  );
+
+  let burn = createTransferSingleEvent(
+    REGISTRY_REREGISTRATION,
+    oldTokenId,
+    OWNER,
+    "0x0000000000000000000000000000000000000000"
+  );
+  burn.block.timestamp = BigInt.fromI32(2000000000);
+  handleTransferSingle(burn);
+
+  let slotId = registryId.concat(bigIntHex32(BigInt.zero()));
+  let afterBurn = ENSv2NameSlot.load(Bytes.fromHexString(slotId));
+  let hasOwnerAfterBurn = false;
+  if (afterBurn != null && afterBurn.owner) {
+    hasOwnerAfterBurn = true;
+  }
+  assert.assertTrue(!hasOwnerAfterBurn);
+  assert.fieldEquals("ENSv2NameSlot", slotId, "status", "AVAILABLE");
+
+  // The new token version shares the same stable slot id.
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      REGISTRY_REREGISTRATION,
+      BigInt.fromI32(2),
+      "replacement"
+    )
+  );
+  assert.fieldEquals("ENSv2NameSlot", slotId, "status", "REGISTERED");
+  assert.fieldEquals(
+    "ENSv2NameSlot",
+    slotId,
+    "owner",
+    Address.fromString(OWNER).toHexString()
+  );
 });
 
 test("TokenResource after registration links slot/resource/token", () => {
@@ -720,11 +816,30 @@ test("regeneration clones slot/resource onto the new token and deactivates the o
   handleLabelRegistered(
     createLabelRegisteredEvent(REGISTRY_REGENERATION, oldTokenId, "grace")
   );
+  handleTransferSingle(
+    createTransferSingleEvent(
+      REGISTRY_REGENERATION,
+      oldTokenId,
+      "0x0000000000000000000000000000000000000000",
+      OWNER
+    )
+  );
   handleTokenResource(
     createTokenResourceEvent(
       REGISTRY_REGENERATION,
       oldTokenId,
       BigInt.fromI32(888)
+    )
+  );
+
+  // Exact contract order: the old ERC-1155 is burned, TokenRegenerated
+  // identifies its replacement, then the replacement is minted.
+  handleTransferSingle(
+    createTransferSingleEvent(
+      REGISTRY_REGENERATION,
+      oldTokenId,
+      OWNER,
+      "0x0000000000000000000000000000000000000000"
     )
   );
 
@@ -734,6 +849,14 @@ test("regeneration clones slot/resource onto the new token and deactivates the o
     newTokenId
   );
   handleTokenRegenerated(regenEvent);
+  handleTransferSingle(
+    createTransferSingleEvent(
+      REGISTRY_REGENERATION,
+      newTokenId,
+      "0x0000000000000000000000000000000000000000",
+      OWNER
+    )
+  );
 
   let slotId = registryId.concat(bigIntHex32(BigInt.zero()));
   let oldTokenEntityId = registryId.concat(bigIntHex32(oldTokenId));
@@ -744,7 +867,19 @@ test("regeneration clones slot/resource onto the new token and deactivates the o
   assert.fieldEquals("ENSv2Token", newTokenEntityId, "slot", slotId);
   assert.fieldEquals("ENSv2Token", newTokenEntityId, "resourceEntity", resourceEntityId);
   assert.fieldEquals("ENSv2Token", newTokenEntityId, "active", "true");
+  assert.fieldEquals(
+    "ENSv2Token",
+    newTokenEntityId,
+    "owner",
+    Address.fromString(OWNER).toHexString()
+  );
   assert.fieldEquals("ENSv2Token", oldTokenEntityId, "active", "false");
+  let oldToken = ENSv2Token.load(Bytes.fromHexString(oldTokenEntityId));
+  let oldTokenHasOwner = false;
+  if (oldToken != null && oldToken.owner) {
+    oldTokenHasOwner = true;
+  }
+  assert.assertTrue(!oldTokenHasOwner);
   assert.fieldEquals("ENSv2NameSlot", slotId, "currentToken", newTokenEntityId);
   assert.fieldEquals("ENSv2Resource", resourceEntityId, "currentToken", newTokenEntityId);
 

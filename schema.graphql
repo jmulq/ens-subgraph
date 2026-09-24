@@ -546,10 +546,10 @@ type ENSv2NameSlot @entity(immutable: false) {
   slotId: BigInt!
   labelhash: Bytes!
   label: String
-  currentResource: ENSv2Resource
-  currentToken: ENSv2Token
-  owner: Account
-  registrant: Account
+  currentResource: ENSv2Resource # null while AVAILABLE
+  currentToken: ENSv2Token # null while AVAILABLE
+  owner: Account # active native owner; null while AVAILABLE
+  registrant: Account # active native registrant; null while AVAILABLE
   resolverAddress: Bytes # denormalised convenience copy of resolver's address; null exactly when resolver is null
   resolver: ENSv2Resolver
   subregistryAddress: Bytes # denormalised convenience copy of subregistry's address; null exactly when subregistry is null
@@ -652,7 +652,7 @@ type ENSv2Resolver @entity(immutable: false) {
   id: Bytes! # resolver address
   address: Bytes!
   slots: [ENSv2NameSlot!]! @derivedFrom(field: "resolver")
-  # New (recordId-keyed) event model — see ENSv2ResolverRecord below (GitHub #43).
+  # PermissionedResolver's recordId-keyed model — see ENSv2ResolverRecord below.
   records: [ENSv2ResolverRecord!]! @derivedFrom(field: "resolver")
   links: [ENSv2ResolverLink!]! @derivedFrom(field: "resolver")
 }
@@ -662,9 +662,23 @@ type ENSv2RoleAssignment @entity(immutable: false) {
   contract: Bytes!
   resource: BigInt!
   resourceEntity: ENSv2Resource
+  resourceArgument: ENSv2ResolverResourceArgument
   account: Account!
   roleBitmap: BigInt!
   updatedAtBlock: BigInt!
+}
+
+# Argument bytes used to derive an argument-scoped PermissionedResolver role
+# resource. ResourceArgument is emitted once before the first role grant for
+# that resource; this row retains the latest observed metadata.
+type ENSv2ResolverResourceArgument @entity(immutable: false) {
+  id: Bytes! # resolver + resource
+  resolver: ENSv2Resolver!
+  resource: BigInt!
+  arg: Bytes!
+  blockNumber: BigInt!
+  transactionID: Bytes!
+  logIndex: BigInt!
 }
 
 type ENSv2RoleChange @entity(immutable: true) {
@@ -687,7 +701,8 @@ interface ENSv2NameSlotEvent {
   logIndex: BigInt!
 }
 
-type ENSv2LabelRegistered implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2LabelRegistered implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes! # transactionID-logIndex
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -709,7 +724,8 @@ type ENSv2LabelRenewed implements ENSv2NameSlotEvent @entity(immutable: true) {
   newExpiryDate: BigInt!
 }
 
-type ENSv2LabelUnregistered implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2LabelUnregistered implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes!
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -718,7 +734,8 @@ type ENSv2LabelUnregistered implements ENSv2NameSlotEvent @entity(immutable: tru
   sender: Bytes!
 }
 
-type ENSv2TokenTransferred implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2TokenTransferred implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes!
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -729,7 +746,8 @@ type ENSv2TokenTransferred implements ENSv2NameSlotEvent @entity(immutable: true
   tokenId: BigInt!
 }
 
-type ENSv2TokenRegenerated implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2TokenRegenerated implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes!
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -739,7 +757,8 @@ type ENSv2TokenRegenerated implements ENSv2NameSlotEvent @entity(immutable: true
   newTokenId: BigInt!
 }
 
-type ENSv2ResolverUpdate implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2ResolverUpdate implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes!
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -749,7 +768,8 @@ type ENSv2ResolverUpdate implements ENSv2NameSlotEvent @entity(immutable: true) 
   sender: Bytes!
 }
 
-type ENSv2SubregistryUpdate implements ENSv2NameSlotEvent @entity(immutable: true) {
+type ENSv2SubregistryUpdate implements ENSv2NameSlotEvent
+  @entity(immutable: true) {
   id: Bytes!
   slot: ENSv2NameSlot!
   blockNumber: BigInt!
@@ -783,18 +803,11 @@ type ENSv2Registration @entity(immutable: false) {
   logIndex: BigInt!
 }
 
-# --- Old (superseded) PermissionedResolver event model ---
-# ENSv2ResolverAlias/ENSv2ResolverResource/ENSv2ResolverData below index the
-# PRE-PR-#354 node/resource-keyed event model (AliasChanged/NamedResource/
-# NamedTextResource/NamedDataResource/NamedAddrResource/DataChanged). Kept
-# exactly as-is, NOT because it's still current — contracts-v2's
-# PermissionedResolver.sol was refactored to a completely different
-# recordId-keyed model (see ENSv2ResolverRecord and friends further below) —
-# but because the actually-deployed Sepolia implementation at the time of
-# this fix (GitHub #43) still emits this old event set. Removing these
-# handlers would stop indexing the resolver that's actually live right now;
-# both models are wired on this same addressless data source simultaneously
-# (zero topic0 collision risk — the two event sets share no signatures).
+# --- Deprecated draft PermissionedResolver surfaces ---
+# ENSv2ResolverAlias and ENSv2ResolverResource represented events that are not
+# present in the final Sepolia deployment. They remain in the schema for now
+# to avoid an unnecessary GraphQL removal, but no deployed-contract handler
+# writes them.
 
 # `ENSv2ResolverAlias` stores resolver level alias rules.
 # These rules affect effective resolution, but they do not mutate the legacy `Resolver` row for the source node.
@@ -830,6 +843,8 @@ type ENSv2ResolverResource @entity(immutable: false) {
   logIndex: BigInt!
 }
 
+# PublicResolverV2's generic node-keyed DataChanged profile. It is indexed by
+# the existing addressless classic Resolver source, not PermissionedResolver.
 type ENSv2ResolverData @entity(immutable: false) {
   id: Bytes! # resolver + node + key
   resolver: ENSv2Resolver!
@@ -837,8 +852,8 @@ type ENSv2ResolverData @entity(immutable: false) {
   key: String!
   # No `value` field: DataChanged's real signature only logs the data's
   # keccak256 hash as an indexed topic (indexedData), never the raw bytes —
-  # no code path could ever populate one (see
-  # src/ensv2Resolver.ts::handleDataChanged). A field that could provably
+  # no code path could ever populate one (see src/resolver.ts::handleDataChanged).
+  # A field that could provably
   # never carry data was removed rather than kept permanently null; if a
   # future ABI change ever does carry the raw value, add it back then.
   blockNumber: BigInt!
@@ -846,7 +861,7 @@ type ENSv2ResolverData @entity(immutable: false) {
   logIndex: BigInt!
 }
 
-# --- New (recordId-keyed) PermissionedResolver event model (GitHub #43) ---
+# --- Deployed recordId-keyed PermissionedResolver event model ---
 # A recordId is an opaque integer, minted once per resolver instance
 # (contracts-v2's _recordCount/_recordIds are per-contract storage — a
 # recordId is only unique WITHIN one resolver, never globally, hence every
@@ -871,6 +886,11 @@ type ENSv2ResolverRecord @entity(immutable: false) {
   abis: [ENSv2ResolverABI!]! @derivedFrom(field: "record")
   interfaces: [ENSv2ResolverInterface!]! @derivedFrom(field: "record")
   links: [ENSv2ResolverLink!]! @derivedFrom(field: "record")
+  memberships: [ENSv2ResolverRecordLinkMembership!]!
+    @derivedFrom(field: "record")
+  linkIndexCount: Int!
+  addressIndexCount: Int!
+  textIndexCount: Int!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
 }
@@ -878,7 +898,7 @@ type ENSv2ResolverRecord @entity(immutable: false) {
 # One row per (resolver, node) — the name-to-record association, written by
 # Linked. `record` is null exactly when `recordId` is the literal 0
 # sentinel (an explicit unlink via linkToRecord(name, 0)), never deleted —
-# same soft-state convention as ENSv2ResolverAlias's own clearing above.
+# retained as current state rather than deleting the row.
 type ENSv2ResolverLink @entity(immutable: false) {
   id: Bytes! # resolver + node
   resolver: ENSv2Resolver!
@@ -897,6 +917,7 @@ type ENSv2ResolverAddress @entity(immutable: false) {
   id: Bytes! # record + coinType
   record: ENSv2ResolverRecord!
   coinType: BigInt!
+  index: Int!
   addressBytes: Bytes!
   blockNumber: BigInt!
   transactionID: Bytes!
@@ -909,13 +930,47 @@ type ENSv2ResolverText @entity(immutable: false) {
   key: String!
   value: String!
   keyHash: Bytes!
+  index: Int!
   blockNumber: BigInt!
   transactionID: Bytes!
   logIndex: BigInt!
 }
 
-# Deliberately not named ENSv2ResolverData (the old entity above, kept for
-# the still-live old resolver implementation) — the new DataUpdated event's
+# Explicit record-to-node membership. This is separate from
+# ENSv2ResolverLink so a record can enumerate its current and former members
+# without relying on @derivedFrom inside a mapping.
+type ENSv2ResolverRecordLinkMembership @entity(immutable: false) {
+  id: Bytes! # record + node
+  record: ENSv2ResolverRecord!
+  link: ENSv2ResolverLink!
+  node: Bytes!
+  index: Int!
+  active: Boolean!
+}
+
+type ENSv2ResolverRecordLinkIndex @entity(immutable: true) {
+  id: Bytes! # record + uint32(index)
+  record: ENSv2ResolverRecord!
+  index: Int!
+  membership: ENSv2ResolverRecordLinkMembership!
+}
+
+type ENSv2ResolverAddressIndex @entity(immutable: true) {
+  id: Bytes! # record + uint32(index)
+  record: ENSv2ResolverRecord!
+  index: Int!
+  address: ENSv2ResolverAddress!
+}
+
+type ENSv2ResolverTextIndex @entity(immutable: true) {
+  id: Bytes! # record + uint32(index)
+  record: ENSv2ResolverRecord!
+  index: Int!
+  text: ENSv2ResolverText!
+}
+
+# Deliberately not named ENSv2ResolverData (the node-keyed PublicResolverV2
+# DataChanged entity above) — PermissionedResolver's DataUpdated event's
 # `value` param is non-indexed and fully recoverable, unlike the old
 # DataChanged's (indexed-only, unrecoverable, why ENSv2ResolverData has no
 # `value` field at all per GitHub #38). Genuinely different capability;

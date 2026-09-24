@@ -99,6 +99,8 @@ dataSources:
         - ContenthashChanged
         - InterfaceChanged
         - AuthorisationChanged
+        - ENSv2Resolver
+        - ENSv2ResolverData
       abis:
         - name: Resolver
           file: ./abis/PublicResolver.json
@@ -115,6 +117,8 @@ dataSources:
           handler: handleAuthorisationChanged
         - event: "ContenthashChanged(indexed bytes32,bytes)"
           handler: handleContentHashChanged
+        - event: "DataChanged(indexed bytes32,indexed string,string,indexed bytes)"
+          handler: handleDataChanged
         - event: "InterfaceChanged(indexed bytes32,indexed bytes4,address)"
           handler: handleInterfaceChanged
         - event: "NameChanged(indexed bytes32,string)"
@@ -293,19 +297,12 @@ dataSources:
 
   # ---------------------------------------------------------------------
   # ENSv2 — additive data sources.
-  # `address` fields below are Sepolia addresses used as the manifest
-  # default since no mainnet ENSv2 deployment exists yet (`network: mainnet`
-  # is kept for consistency — a subgraph can't mix networks). Real target
-  # network is Sepolia via `yarn deploy:sepolia`, which swaps
-  # address/network from networks.json's `sepolia` block.
-  #
-  # WARNING: running the plain `yarn deploy` script (network: mainnet, no
-  # --network override) against this manifest as committed will silently
-  # create a mainnet deployment for the 4 ENSv2 sources below using
-  # addresses that are Sepolia-only contracts, not real mainnet ENSv2
-  # contracts (none exist yet). Always use `yarn deploy:sepolia` for this
-  # subgraph until a real mainnet ENSv2 deployment exists and networks.json
-  # gets a mainnet block for these 4 sources.
+  # The committed manifest retains the repository's mainnet default. The v2
+  # addresses below are temporary Sepolia placeholders until ENSv2 is deployed
+  # on mainnet. Do not deploy this raw manifest to mainnet. Build/deploy with
+  # `--network sepolia` so graph-cli replaces every source parameter from
+  # networks.json. Before a mainnet deployment, add the five missing ENSv2
+  # entries and per-network constants, then run the network validator.
   # ---------------------------------------------------------------------
 
   - kind: ethereum/contract
@@ -327,6 +324,7 @@ dataSources:
       entities:
         - ENSv2Registry
         - ENSv2NameSlot
+        - ENSv2Registration
         - ENSv2Namespace
         - ENSv2NamespaceLink
         - ENSv2Resource
@@ -345,12 +343,21 @@ dataSources:
         # Actually written via ensv2Paths.ts/ensv2Domain.ts imports but
         # missing from this list previously (audit finding 32).
         - Domain
+        - Resolver
         - Registration
         - Account
         - ENSv2RegistryNamespaceIndex
         - ENSv2SlotPathIndex
         - ENSv2PathNamespaceIndex
         - ENSv2NamespacePathIndex
+        - ENSv2Resolver
+        - ENSv2ResolverLink
+        - ENSv2ResolverRecord
+        - ENSv2ResolverAddress
+        - ENSv2ResolverText
+        - ENSv2ResolverAddressIndex
+        - ENSv2ResolverTextIndex
+        - ENSv2ResolverResourceArgument
       abis:
         - name: PermissionedRegistry
           file: ./abis/PermissionedRegistry.json
@@ -453,9 +460,6 @@ dataSources:
       language: wasm/assemblyscript
       file: ./src/ensv2Resolver.ts
       entities:
-        - ENSv2ResolverAlias
-        - ENSv2ResolverResource
-        - ENSv2ResolverData
         - ENSv2ResolverRecord
         - ENSv2ResolverLink
         - ENSv2ResolverAddress
@@ -463,6 +467,11 @@ dataSources:
         - ENSv2ResolverRecordData
         - ENSv2ResolverABI
         - ENSv2ResolverInterface
+        - ENSv2ResolverRecordLinkMembership
+        - ENSv2ResolverRecordLinkIndex
+        - ENSv2ResolverAddressIndex
+        - ENSv2ResolverTextIndex
+        - ENSv2ResolverResourceArgument
         - ENSv2RoleAssignment
         - ENSv2RoleChange
         # Actually written via getOrCreateResolver / processEACRolesChanged
@@ -470,33 +479,20 @@ dataSources:
         - ENSv2Resolver
         - ENSv2Resource
         - Account
+        - Domain
+        - Resolver
       abis:
         - name: PermissionedResolver
           file: ./abis/PermissionedResolver.json
       eventHandlers:
-        # Old (superseded) event model — kept wired alongside the new model
-        # below, since the actually-live Sepolia implementation still emits
-        # these (GitHub #43).
-        - event: "AliasChanged(indexed bytes,indexed bytes,bytes,bytes)"
-          handler: handleAliasChanged
-        - event: "NamedResource(indexed uint256,bytes)"
-          handler: handleNamedResource
-        - event: "NamedTextResource(indexed uint256,bytes,indexed bytes32,string)"
-          handler: handleNamedTextResource
-        - event: "NamedDataResource(indexed uint256,bytes,indexed bytes32,string)"
-          handler: handleNamedDataResource
-        - event: "NamedAddrResource(indexed uint256,bytes,indexed uint256)"
-          handler: handleNamedAddrResource
-        - event: "DataChanged(indexed bytes32,indexed string,string,indexed bytes)"
-          handler: handleDataChanged
         - event: "EACRolesChanged(indexed uint256,indexed address,uint256,uint256)"
           handler: handleEACRolesChanged
-        # New (recordId-keyed) event model, from contracts-v2 PR #354
-        # (GitHub #43).
         - event: "Linked(indexed uint256,indexed bytes32,bytes)"
           handler: handleLinked
         - event: "ResolverCreated()"
           handler: handleResolverCreated
+        - event: "ResourceArgument(indexed uint256,bytes)"
+          handler: handleResourceArgument
         - event: "ContenthashUpdated(indexed uint256,bytes)"
           handler: handleContenthashUpdated
         - event: "AddressUpdated(indexed uint256,uint256,bytes)"

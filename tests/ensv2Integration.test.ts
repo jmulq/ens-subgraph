@@ -7,7 +7,7 @@
 // unregister/re-register (ensv2Registry.test.ts, Phase 3), ProxyDeployed
 // same-tx ordering (ensv2Roles.test.ts, Phase 8), and
 // SubregistryUpdated(..., address(0)) clearing (ensv2Paths.test.ts, Phase 4).
-import { Address, BigInt, Bytes, crypto, ethereum } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import {
   afterEach,
   assert,
@@ -18,21 +18,23 @@ import {
 } from "matchstick-as/assembly/index";
 import {
   handleEACRolesChanged,
+  handleExpiryUpdated,
   handleLabelRegistered,
   handleSubregistryUpdated,
   handleTokenResource,
 } from "../src/ensv2Registry";
 import { handleNameRegistered } from "../src/ensv2Registrar";
-import { handleAliasChanged, namehashFromDnsEncoded } from "../src/ensv2Resolver";
+import { handleLinked } from "../src/ensv2Resolver";
 import { nameSlotId, pathNamehash, resourceId, toSlotId } from "../src/ensv2Utils";
 import {
+  ExpiryUpdated,
   LabelRegistered,
   SubregistryUpdated,
   TokenResource,
   EACRolesChanged,
 } from "../src/types/RootRegistry/PermissionedRegistry";
 import { NameRegistered } from "../src/types/ETHRegistrar/ETHRegistrar";
-import { AliasChanged } from "../src/types/PermissionedResolver/PermissionedResolver";
+import { Linked } from "../src/types/PermissionedResolver/PermissionedResolver";
 import { Domain, Registration, WrappedDomain } from "../src/types/schema";
 
 const ROOT_REGISTRY = "0x9703DBD26dAB89504490994138cF2c575251a9cE";
@@ -44,6 +46,8 @@ const LOCKED_MIGRATION_CONTROLLER = "0xab1B57C6eE5E91e6090595c0AF14CB9B8bc7773f"
 const GRAVEYARD = "0x0000000000000000000000000000000000dead01";
 const ROOT_NAMEHASH =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
+const ETH_LABELHASH =
+  "0x4f5b812789fc606be1b3b16908db13fc7a9adf7ca72641f84d75b47069d3d7f0";
 const PAYMENT_TOKEN = "0x3DfC8b53dAFa5eBbb071a8B97678Ab534Ed838D9";
 
 const TWO_POW_32 = BigInt.fromI64(4294967296);
@@ -216,6 +220,34 @@ const createNameRegisteredEvent = (
   return event;
 };
 
+const createExpiryUpdatedEvent = (
+  tokenId: BigInt,
+  newExpiry: BigInt
+): ExpiryUpdated => {
+  let mockEvent = newMockEvent();
+  let event = new ExpiryUpdated(
+    Address.fromString(ETH_REGISTRY),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId))
+  );
+  event.parameters.push(
+    new ethereum.EventParam(
+      "newExpiry",
+      ethereum.Value.fromUnsignedBigInt(newExpiry)
+    )
+  );
+  return event;
+};
+
 const createEACRolesChangedEvent = (
   contract: string,
   resource: BigInt,
@@ -256,13 +288,14 @@ const createEACRolesChangedEvent = (
   return event;
 };
 
-const createAliasChangedEvent = (
+const createLinkedEvent = (
   resolverAddress: string,
-  fromName: Bytes,
-  toName: Bytes
-): AliasChanged => {
+  recordId: BigInt,
+  node: Bytes,
+  name: Bytes
+): Linked => {
   let mockEvent = newMockEvent();
-  let event = new AliasChanged(
+  let event = new Linked(
     Address.fromString(resolverAddress),
     mockEvent.logIndex,
     mockEvent.transactionLogIndex,
@@ -275,22 +308,24 @@ const createAliasChangedEvent = (
   event.parameters = new Array();
   event.parameters.push(
     new ethereum.EventParam(
-      "indexedFromName",
-      ethereum.Value.fromBytes(Bytes.fromByteArray(crypto.keccak256(fromName)))
+      "recordId",
+      ethereum.Value.fromUnsignedBigInt(recordId)
     )
   );
   event.parameters.push(
     new ethereum.EventParam(
-      "indexedToName",
-      ethereum.Value.fromBytes(Bytes.fromByteArray(crypto.keccak256(toName)))
+      "node",
+      ethereum.Value.fromFixedBytes(node)
     )
   );
-  event.parameters.push(new ethereum.EventParam("fromName", ethereum.Value.fromBytes(fromName)));
-  event.parameters.push(new ethereum.EventParam("toName", ethereum.Value.fromBytes(toName)));
+  event.parameters.push(
+    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
+  );
   return event;
 };
 
-function setupEthNamespace(rootTokenN: i32, rootLabelHash: Bytes): Bytes {
+function setupEthNamespace(rootTokenN: i32): Bytes {
+  let rootLabelHash = Bytes.fromHexString(ETH_LABELHASH);
   handleLabelRegistered(
     createLabelRegisteredEvent(ROOT_REGISTRY, slotToken(rootTokenN), rootLabelHash, "eth")
   );
@@ -316,7 +351,7 @@ function bigIntHex32(i: BigInt): string {
 test("full chain across registry, paths, domain, registrar, resources, roles, and resolver mapping files stays consistent in one store", () => {
   dataSourceMock.setNetwork("sepolia");
 
-  let ethBaseNamehash = setupEthNamespace(1, Bytes.fromI32(79));
+  let ethBaseNamehash = setupEthNamespace(1);
 
   let labelHash = Bytes.fromI32(80);
   let tokenId = slotToken(2);
@@ -353,12 +388,18 @@ test("full chain across registry, paths, domain, registrar, resources, roles, an
     .concat(Address.fromString(roleAccount).toHexString().slice(2));
 
   let resolverAddress = "0x33333333333333333333333333333333333333cc";
-  let fromName = encodeLabel("chaintest");
-  let toName = encodeLabel("chaintestalias");
-  handleAliasChanged(createAliasChangedEvent(resolverAddress, fromName, toName));
-  let aliasId = Address.fromString(resolverAddress)
+  let resolverNode = Bytes.fromI32(211);
+  handleLinked(
+    createLinkedEvent(
+      resolverAddress,
+      BigInt.fromI32(1),
+      resolverNode,
+      encodeLabel("chaintest")
+    )
+  );
+  let linkId = Address.fromString(resolverAddress)
     .toHexString()
-    .concat(namehashFromDnsEncoded(fromName).toHexString().slice(2));
+    .concat(resolverNode.toHexString().slice(2));
 
   // Each assertion below reads state written by a different mapping file
   // (ensv2Registry/ensv2Paths/ensv2Domain/ensv2Registrar/ensv2Roles/
@@ -367,8 +408,50 @@ test("full chain across registry, paths, domain, registrar, resources, roles, an
   assert.fieldEquals("Domain", pathId, "name", "chaintest.eth");
   assert.fieldEquals("Registration", registrationId, "domain", pathId);
   assert.fieldEquals("ENSv2Registration", slotId, "duration", "31536000");
+  assert.fieldEquals("ENSv2Registration", slotId, "path", pathId);
+  assert.fieldEquals("ENSv2Registration", slotId, "resource", resourceEntityId);
+  assert.fieldEquals("ENSv2Registration", slotId, "expiryDate", "2000000000");
   assert.fieldEquals("ENSv2RoleAssignment", assignmentId, "resourceEntity", resourceEntityId);
-  assert.fieldEquals("ENSv2ResolverAlias", aliasId, "active", "true");
+  assert.fieldEquals("ENSv2ResolverLink", linkId, "active", "true");
+});
+
+test("direct ETHRegistry renewal synchronizes native registration expiry without resetting registration date", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  setupEthNamespace(10);
+  let labelHash = Bytes.fromI32(81);
+  let tokenId = slotToken(11);
+  handleLabelRegistered(
+    createLabelRegisteredEvent(ETH_REGISTRY, tokenId, labelHash, "directrenew")
+  );
+
+  let registered = createNameRegisteredEvent(
+    tokenId,
+    "directrenew",
+    BigInt.fromI32(31536000)
+  );
+  registered.block.timestamp = BigInt.fromI32(1234);
+  handleNameRegistered(registered);
+
+  let newExpiry = BigInt.fromI32(2100000000);
+  handleExpiryUpdated(createExpiryUpdatedEvent(tokenId, newExpiry));
+
+  let registrationId = nameSlotId(
+    Address.fromString(ETH_REGISTRY),
+    toSlotId(tokenId)
+  ).toHexString();
+  assert.fieldEquals(
+    "ENSv2Registration",
+    registrationId,
+    "expiryDate",
+    newExpiry.toString()
+  );
+  assert.fieldEquals(
+    "ENSv2Registration",
+    registrationId,
+    "registrationDate",
+    "1234"
+  );
 });
 
 test("registrar-before-registry and registrar-after-registry orderings produce identical Domain/Registration state", () => {
@@ -379,32 +462,45 @@ test("registrar-before-registry and registrar-after-registry orderings produce i
 
   // Order A: registrar event first, then the registry event that actually
   // materialises the path/Domain projection.
-  let ethBaseNamehashA = setupEthNamespace(2, Bytes.fromI32(81));
+  let ethBaseNamehashA = setupEthNamespace(2);
   handleNameRegistered(createNameRegisteredEvent(tokenId, "orderindep", BigInt.fromI32(31536000)));
   handleLabelRegistered(
     createLabelRegisteredEvent(ETH_REGISTRY, tokenId, labelHash, "orderindep")
   );
+  let resource = BigInt.fromI32(27);
+  handleTokenResource(createTokenResourceEvent(ETH_REGISTRY, tokenId, resource));
   let pathIdA = pathNamehash(ethBaseNamehashA, labelHash).toHexString();
+  let slotIdA = nameSlotId(Address.fromString(ETH_REGISTRY), toSlotId(tokenId)).toHexString();
+  let resourceIdA = resourceId(Address.fromString(ETH_REGISTRY), resource).toHexString();
   let registrationIdA = labelHash.toHexString();
   assert.fieldEquals("Domain", pathIdA, "name", "orderindep.eth");
   assert.fieldEquals("Registration", registrationIdA, "domain", pathIdA);
   assert.fieldEquals("Domain", pathIdA, "expiryDate", "2002419200");
+  assert.fieldEquals("ENSv2Registration", slotIdA, "path", pathIdA);
+  assert.fieldEquals("ENSv2Registration", slotIdA, "resource", resourceIdA);
+  assert.fieldEquals("ENSv2Registration", slotIdA, "expiryDate", "2000000000");
 
   clearStore();
 
   // Order B: the registry event (and hence Domain projection) fires first,
   // registrar enrichment arrives after.
-  let ethBaseNamehashB = setupEthNamespace(2, Bytes.fromI32(81));
+  let ethBaseNamehashB = setupEthNamespace(2);
   handleLabelRegistered(
     createLabelRegisteredEvent(ETH_REGISTRY, tokenId, labelHash, "orderindep")
   );
+  handleTokenResource(createTokenResourceEvent(ETH_REGISTRY, tokenId, resource));
   handleNameRegistered(createNameRegisteredEvent(tokenId, "orderindep", BigInt.fromI32(31536000)));
   let pathIdB = pathNamehash(ethBaseNamehashB, labelHash).toHexString();
+  let slotIdB = nameSlotId(Address.fromString(ETH_REGISTRY), toSlotId(tokenId)).toHexString();
+  let resourceIdB = resourceId(Address.fromString(ETH_REGISTRY), resource).toHexString();
   let registrationIdB = labelHash.toHexString();
 
   assert.fieldEquals("Domain", pathIdB, "name", "orderindep.eth");
   assert.fieldEquals("Registration", registrationIdB, "domain", pathIdB);
   assert.fieldEquals("Domain", pathIdB, "expiryDate", "2002419200");
+  assert.fieldEquals("ENSv2Registration", slotIdB, "path", pathIdB);
+  assert.fieldEquals("ENSv2Registration", slotIdB, "resource", resourceIdB);
+  assert.fieldEquals("ENSv2Registration", slotIdB, "expiryDate", "2000000000");
 });
 
 test("late-link + Domain projection combined: pre-existing child registration stays unprojected, a fresh post-link registration is fully projected", () => {
@@ -465,7 +561,7 @@ test("late-link + Domain projection combined: pre-existing child registration st
 test("Phase 6 migration correction survives unrelated cross-file activity in the same store", () => {
   dataSourceMock.setNetwork("sepolia");
 
-  let ethBaseNamehash = setupEthNamespace(3, Bytes.fromI32(93));
+  let ethBaseNamehash = setupEthNamespace(3);
 
   let labelHash = Bytes.fromI32(203);
   let domainId = pathNamehash(ethBaseNamehash, labelHash).toHexString();
@@ -530,11 +626,12 @@ test("Phase 6 migration correction survives unrelated cross-file activity in the
       BigInt.fromI32(1)
     )
   );
-  handleAliasChanged(
-    createAliasChangedEvent(
+  handleLinked(
+    createLinkedEvent(
       "0x55555555555555555555555555555555555555ee",
-      encodeLabel("unrelatedalias"),
-      encodeLabel("unrelatedaliastarget")
+      BigInt.fromI32(2),
+      Bytes.fromI32(212),
+      encodeLabel("unrelated")
     )
   );
 

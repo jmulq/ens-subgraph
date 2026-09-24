@@ -1,5 +1,6 @@
 // Minimal smoke-test layer for every handler wired from src/resolver.ts
-// (the addressless v1 Resolver data source). Independent of and
+// (the addressless classic Resolver data source, including PublicResolverV2).
+// Independent of and
 // redundant with resolver.test.ts's richer behavioral tests -- one
 // mock-event-per-handler baseline only.
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
@@ -16,6 +17,7 @@ import {
   handleAddrChanged,
   handleAuthorisationChanged,
   handleContentHashChanged,
+  handleDataChanged,
   handleInterfaceChanged,
   handleMulticoinAddrChanged,
   handleNameChanged,
@@ -30,6 +32,7 @@ import {
   AddressChanged,
   AuthorisationChanged,
   ContenthashChanged,
+  DataChanged,
   InterfaceChanged,
   NameChanged,
   PubkeyChanged,
@@ -192,6 +195,36 @@ test("smoke: handleContentHashChanged creates a ContenthashChanged history row",
   );
   handleContentHashChanged(event);
   assert.entityCount("ContenthashChanged", 1);
+});
+
+test("smoke: handleDataChanged creates ENSv2 node-keyed data state", () => {
+  let event = newEventLike<DataChanged>(
+    (a, li, tli, lt, b, t, p, r) => new DataChanged(a, li, tli, lt, b, t, p, r)
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam("node", ethereum.Value.fromFixedBytes(NODE))
+  );
+  event.parameters.push(
+    new ethereum.EventParam(
+      "indexedKey",
+      ethereum.Value.fromBytes(Bytes.fromI32(1))
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("key", ethereum.Value.fromString("contentType"))
+  );
+  event.parameters.push(
+    new ethereum.EventParam(
+      "indexedData",
+      ethereum.Value.fromBytes(Bytes.fromI32(2))
+    )
+  );
+
+  handleDataChanged(event);
+
+  assert.entityCount("ENSv2Resolver", 1);
+  assert.entityCount("ENSv2ResolverData", 1);
 });
 
 test("smoke: handleInterfaceChanged creates an InterfaceChanged history row", () => {

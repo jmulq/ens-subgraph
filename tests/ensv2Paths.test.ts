@@ -13,8 +13,18 @@ import {
   handleResolverUpdated,
   handleSubregistryUpdated,
 } from "../src/ensv2Registry";
+import {
+  handleContenthashUpdated,
+  handleLinked,
+} from "../src/ensv2Resolver";
 import { namespaceId, pathNamehash } from "../src/ensv2Utils";
-import { ENSv2NameSlot } from "../src/types/schema";
+import { createResolverID, handleAddrChanged } from "../src/resolver";
+import { AddrChanged } from "../src/types/Resolver/Resolver";
+import { Domain, ENSv2NameSlot, Resolver } from "../src/types/schema";
+import {
+  ContenthashUpdated,
+  Linked,
+} from "../src/types/PermissionedResolver/PermissionedResolver";
 import {
   LabelRegistered,
   LabelUnregistered,
@@ -60,6 +70,17 @@ function slotExists(id: string): boolean {
   let slot = ENSv2NameSlot.load(Bytes.fromHexString(id));
   let exists = slot != null;
   return exists;
+}
+
+function encodeLabel(label: string): Bytes {
+  let labelBytes = Bytes.fromUTF8(label);
+  let out = new Uint8Array(labelBytes.length + 2);
+  out[0] = labelBytes.length as u8;
+  for (let i = 0; i < labelBytes.length; i++) {
+    out[i + 1] = labelBytes[i];
+  }
+  out[labelBytes.length + 1] = 0;
+  return Bytes.fromUint8Array(out);
 }
 
 const createLabelRegisteredEvent = (
@@ -228,6 +249,68 @@ const createResolverUpdatedEvent = (
   return event;
 };
 
+const createLinkedEvent = (
+  resolverAddress: string,
+  recordId: BigInt,
+  node: Bytes,
+  name: Bytes
+): Linked => {
+  let mockEvent = newMockEvent();
+  let event = new Linked(
+    Address.fromString(resolverAddress),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam(
+      "recordId",
+      ethereum.Value.fromUnsignedBigInt(recordId)
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("node", ethereum.Value.fromFixedBytes(node))
+  );
+  event.parameters.push(
+    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
+  );
+  return event;
+};
+
+const createContenthashUpdatedEvent = (
+  resolverAddress: string,
+  recordId: BigInt,
+  hash: Bytes
+): ContenthashUpdated => {
+  let mockEvent = newMockEvent();
+  let event = new ContenthashUpdated(
+    Address.fromString(resolverAddress),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam(
+      "recordId",
+      ethereum.Value.fromUnsignedBigInt(recordId)
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("hash", ethereum.Value.fromBytes(hash))
+  );
+  return event;
+};
+
 afterEach(() => {
   dataSourceMock.resetValues();
   clearStore();
@@ -309,7 +392,7 @@ test("3-level nested registration produces correct name/namehash/depth chain", (
   assert.fieldEquals("ENSv2Registry", ethRegistryId, "kind", "ETH");
 });
 
-test("shared subregistry linked under two parents produces two distinct path rows for one slot", () => {
+test("resolver set, change, clear, and re-registration reset reach every path of a shared slot without creating paths", () => {
   dataSourceMock.setNetwork("sepolia");
 
   const CHILD_REGISTRY = "0x222222222222222222222222222222222222222b";
@@ -372,6 +455,85 @@ test("shared subregistry linked under two parents produces two distinct path row
 
   let walletSlotId = slotIdFor(CHILD_REGISTRY, 1);
   assert.fieldEquals("ENSv2NameSlot", walletSlotId, "pathCount", "2");
+
+  const RESOLVER_A = "0x2323232323232323232323232323232323232323";
+  const RESOLVER_B = "0x2424242424242424242424242424242424242424";
+  handleResolverUpdated(
+    createResolverUpdatedEvent(
+      CHILD_REGISTRY,
+      slotToken(1),
+      RESOLVER_A
+    )
+  );
+  let resolverA = Address.fromString(RESOLVER_A);
+  assert.fieldEquals(
+    "Domain",
+    walletUnderOne,
+    "resolver",
+    createResolverID(Bytes.fromHexString(walletUnderOne), resolverA)
+  );
+  assert.fieldEquals(
+    "Domain",
+    walletUnderTwo,
+    "resolver",
+    createResolverID(Bytes.fromHexString(walletUnderTwo), resolverA)
+  );
+  assert.entityCount("ENSv2NamePath", 4);
+
+  handleResolverUpdated(
+    createResolverUpdatedEvent(CHILD_REGISTRY, slotToken(1), RESOLVER_B)
+  );
+  let resolverB = Address.fromString(RESOLVER_B);
+  assert.fieldEquals(
+    "Domain",
+    walletUnderOne,
+    "resolver",
+    createResolverID(Bytes.fromHexString(walletUnderOne), resolverB)
+  );
+  assert.fieldEquals(
+    "Domain",
+    walletUnderTwo,
+    "resolver",
+    createResolverID(Bytes.fromHexString(walletUnderTwo), resolverB)
+  );
+  assert.entityCount("ENSv2NamePath", 4);
+
+  handleResolverUpdated(
+    createResolverUpdatedEvent(
+      CHILD_REGISTRY,
+      slotToken(1),
+      "0x0000000000000000000000000000000000000000"
+    )
+  );
+  assert.assertTrue(!Domain.load(walletUnderOne)!.resolver);
+  assert.assertTrue(!Domain.load(walletUnderTwo)!.resolver);
+  assert.entityCount("ENSv2NamePath", 4);
+
+  // Reattach, then prove LabelUnregistered itself leaves the compatibility
+  // association intact and the later LabelRegistered performs the protocol's
+  // silent resolver reset across both materialized paths.
+  handleResolverUpdated(
+    createResolverUpdatedEvent(CHILD_REGISTRY, slotToken(1), RESOLVER_A)
+  );
+  handleLabelUnregistered(
+    createLabelUnregisteredEvent(CHILD_REGISTRY, slotToken(1))
+  );
+  assert.assertTrue(!!Domain.load(walletUnderOne)!.resolver);
+  assert.assertTrue(!!Domain.load(walletUnderTwo)!.resolver);
+
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      CHILD_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(20),
+      "wallet",
+      OWNER_2
+    )
+  );
+  assert.assertTrue(!Domain.load(walletUnderOne)!.resolver);
+  assert.assertTrue(!Domain.load(walletUnderTwo)!.resolver);
+  assert.fieldEquals("ENSv2NameSlot", walletSlotId, "pathCount", "2");
+  assert.entityCount("ENSv2NamePath", 4);
 });
 
 test("late-link: pre-existing child registrations get zero new path rows and pathCount stays untouched", () => {
@@ -480,15 +642,155 @@ test("handleResolverUpdated creates ENSv2Resolver and links/clears slot.resolver
   );
 
   let resolverId = Address.fromString(RESOLVER_ADDRESS).toHexString();
+  let pathNode = pathNamehash(
+    Bytes.fromHexString(ROOT_NAMEHASH),
+    Bytes.fromI32(50)
+  );
+  let legacyResolverId = createResolverID(
+    pathNode,
+    Address.fromString(RESOLVER_ADDRESS)
+  );
   assert.fieldEquals("ENSv2Resolver", resolverId, "address", resolverId);
   assert.fieldEquals("ENSv2NameSlot", slotId, "resolver", resolverId);
   assert.fieldEquals("ENSv2NameSlot", slotId, "resolverAddress", resolverId);
+  assert.fieldEquals(
+    "Domain",
+    pathNode.toHexString(),
+    "resolver",
+    legacyResolverId
+  );
+  assert.fieldEquals(
+    "Resolver",
+    legacyResolverId,
+    "domain",
+    pathNode.toHexString()
+  );
 
   // Clearing — slot is never deleted, only the resolver fields go null.
   handleResolverUpdated(
     createResolverUpdatedEvent(ROOT_REGISTRY, slotToken(1), ZERO_ADDRESS)
   );
   assert.assertTrue(slotExists(slotId));
+  assert.assertTrue(!Domain.load(pathNode.toHexString())!.resolver);
+  assert.assertTrue(!Domain.load(pathNode.toHexString())!.resolvedAddress);
+});
+
+test("link and record update before registry association snapshot correctly, and stale resolver fanout is ignored after a change", () => {
+  dataSourceMock.setNetwork("sepolia");
+  const RESOLVER_A = "0x4646464646464646464646464646464646464646";
+  const RESOLVER_B = "0x4747474747474747474747474747474747474747";
+  let tokenId = slotToken(1);
+  let labelHash = Bytes.fromI32(52);
+  let recordId = BigInt.fromI32(52);
+  let initialContent = Bytes.fromUTF8("linked-before-association");
+
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      ROOT_REGISTRY,
+      tokenId,
+      labelHash,
+      "ordered"
+    )
+  );
+  let node = pathNamehash(Bytes.fromHexString(ROOT_NAMEHASH), labelHash);
+  let resolverAId = createResolverID(node, Address.fromString(RESOLVER_A));
+  let resolverBId = createResolverID(node, Address.fromString(RESOLVER_B));
+
+  handleLinked(
+    createLinkedEvent(
+      RESOLVER_A,
+      recordId,
+      node,
+      encodeLabel("ordered")
+    )
+  );
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(RESOLVER_A, recordId, initialContent)
+  );
+  assert.assertTrue(!Domain.load(node.toHexString())!.resolver);
+  assert.notInStore("Resolver", resolverAId);
+
+  // The registry association arrives last and must snapshot the already
+  // populated native record immediately.
+  handleResolverUpdated(
+    createResolverUpdatedEvent(ROOT_REGISTRY, tokenId, RESOLVER_A)
+  );
+  assert.fieldEquals("Domain", node.toHexString(), "resolver", resolverAId);
+  assert.bytesEquals(initialContent, Resolver.load(resolverAId)!.contentHash!);
+
+  // Once the registry switches to B, later updates from A remain native-only
+  // and cannot mutate either Domain.resolver or B's legacy snapshot.
+  handleResolverUpdated(
+    createResolverUpdatedEvent(ROOT_REGISTRY, tokenId, RESOLVER_B)
+  );
+  let staleContent = Bytes.fromUTF8("stale-resolver-update");
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(RESOLVER_A, recordId, staleContent)
+  );
+  let nativeRecordId = Address.fromString(RESOLVER_A)
+    .toHexString()
+    .concat(bigIntHex32(recordId));
+  assert.fieldEquals(
+    "ENSv2ResolverRecord",
+    nativeRecordId,
+    "contenthash",
+    staleContent.toHexString()
+  );
+  assert.fieldEquals("Domain", node.toHexString(), "resolver", resolverBId);
+  assert.bytesEquals(initialContent, Resolver.load(resolverAId)!.contentHash!);
+  assert.assertTrue(!Resolver.load(resolverBId)!.contentHash);
+});
+
+test("a classic PublicResolverV2 event updates the Resolver row attached by ENSv2 ResolverUpdated", () => {
+  dataSourceMock.setNetwork("sepolia");
+  const RESOLVER_ADDRESS = "0x4545454545454545454545454545454545454545";
+  const RESOLVED_ADDRESS = "0x5656565656565656565656565656565656565656";
+
+  handleLabelRegistered(
+    createLabelRegisteredEvent(
+      ROOT_REGISTRY,
+      slotToken(1),
+      Bytes.fromI32(51),
+      "classic"
+    )
+  );
+  let node = pathNamehash(
+    Bytes.fromHexString(ROOT_NAMEHASH),
+    Bytes.fromI32(51)
+  );
+  handleResolverUpdated(
+    createResolverUpdatedEvent(ROOT_REGISTRY, slotToken(1), RESOLVER_ADDRESS)
+  );
+
+  let mockEvent = newMockEvent();
+  let event = new AddrChanged(
+    Address.fromString(RESOLVER_ADDRESS),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam("node", ethereum.Value.fromFixedBytes(node))
+  );
+  event.parameters.push(
+    new ethereum.EventParam(
+      "a",
+      ethereum.Value.fromAddress(Address.fromString(RESOLVED_ADDRESS))
+    )
+  );
+  handleAddrChanged(event);
+
+  assert.fieldEquals(
+    "Domain",
+    node.toHexString(),
+    "resolvedAddress",
+    Address.fromString(RESOLVED_ADDRESS).toHexString()
+  );
 });
 
 test("SubregistryUpdated(..., address(0)) clears the link and deactivates (not deletes) the namespace it produced", () => {
@@ -778,9 +1080,28 @@ test("late-linked path has no Domain row", () => {
   ).toHexString();
 
   assert.notInStore("Domain", wouldBeOrphanPathId);
+
+  // A later resolver association still cannot backfill the deliberately
+  // unmaterialised path or a legacy Resolver row for it.
+  const RESOLVER_ADDRESS = "0x999999999999999999999999999999999999999c";
+  handleResolverUpdated(
+    createResolverUpdatedEvent(
+      LATE_CHILD_REGISTRY,
+      slotToken(1),
+      RESOLVER_ADDRESS
+    )
+  );
+  assert.notInStore("Domain", wouldBeOrphanPathId);
+  assert.notInStore(
+    "Resolver",
+    createResolverID(
+      Bytes.fromHexString(wouldBeOrphanPathId),
+      Address.fromString(RESOLVER_ADDRESS)
+    )
+  );
 });
 
-test("re-registration on the same slot updates the existing Domain row's owner", () => {
+test("re-registration updates the existing Domain owner and performs the silent resolver reset", () => {
   dataSourceMock.setNetwork("sepolia");
 
   handleLabelRegistered(
@@ -803,9 +1124,16 @@ test("re-registration on the same slot updates the existing Domain row's owner",
     Address.fromString(OWNER).toHexString()
   );
 
+  const RESOLVER_ADDRESS = "0x888888888888888888888888888888888888888b";
+  handleResolverUpdated(
+    createResolverUpdatedEvent(ROOT_REGISTRY, slotToken(1), RESOLVER_ADDRESS)
+  );
+  assert.assertTrue(!!Domain.load(pathId)!.resolver);
+
   handleLabelUnregistered(
     createLabelUnregisteredEvent(ROOT_REGISTRY, slotToken(1))
   );
+  assert.assertTrue(!!Domain.load(pathId)!.resolver);
   handleLabelRegistered(
     createLabelRegisteredEvent(
       ROOT_REGISTRY,
@@ -822,4 +1150,7 @@ test("re-registration on the same slot updates the existing Domain row's owner",
     "owner",
     Address.fromString(OWNER_2).toHexString()
   );
+  assert.assertTrue(!Domain.load(pathId)!.resolver);
+  assert.assertTrue(!Domain.load(pathId)!.resolvedAddress);
+  assert.entityCount("ENSv2NamePath", 1);
 });
