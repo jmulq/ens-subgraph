@@ -4,6 +4,19 @@ This Subgraph sources events from the ENS contracts. This includes the ENS regis
 
 As of the ENSv2 upgrade, it also indexes the ENSv2 registry/registrar/resolver contracts directly. See "Querying ENSv2" below for the query contract that upgrade adds.
 
+## Network-specific builds and deployments
+
+Network-specific commands validate `networks.json` and the ENSv2 deployment constants before invoking graph-cli. They operate on a temporary sibling manifest because graph-cli rewrites the manifest passed with `--network`; the committed `subgraph.yaml` is left unchanged.
+
+```sh
+yarn build:sepolia
+yarn deploy:sepolia <studio-subgraph-name> \
+  --node https://api.studio.thegraph.com/deploy/ \
+  --version-label <version-label>
+```
+
+The Studio subgraph name and version label are deliberately explicit rather than repository-wide constants. A failed command removes its temporary manifest as well.
+
 # Example Queries (ENSv1 — `Domain`/`Registration`/`Resolver`)
 
 Here we have example queries, so that you don't have to type them in yourself eachtime in the graphiql playground:

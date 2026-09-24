@@ -49,13 +49,10 @@ export function getV2GracePeriod(): BigInt {
   let network = dataSource.network();
   if (network == "sepolia") {
     // 28 days (2,419,200s) — contracts-v2/contracts/script/deploy-constants.ts
-    // sets GRACE_PERIOD_V2 to this. Verified against the live deployment, not
-    // just the source script (fix plan Phase 2): ETHRenewerV1's public
-    // GRACE_PERIOD() getter on Sepolia (0x1be516ae1b72765ae55bd5e9ca628c9058a1c622)
-    // returns 7776001, which is exactly PREMIGRATION_BONUS_PERIOD (5356801) +
-    // GRACE_PERIOD_V2 (2419200) computed from that same source file — the
-    // deployed contract's constructor args match its constants, confirmed
-    // live via eth_call, not assumed.
+    // sets GRACE_PERIOD_V2 to this. Verified against the current Sepolia
+    // ETHRenewerV1 deployment (0xd06e726e9bd8ac0f33a2a45f4cc28fe10d656a36):
+    // GRACE_PERIOD() returns 7776001, exactly PREMIGRATION_BONUS_PERIOD
+    // (5356801) + GRACE_PERIOD_V2 (2419200).
     return BigInt.fromI32(2419200);
   }
   log.critical(
