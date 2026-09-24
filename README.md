@@ -91,7 +91,11 @@ The ENSv2 upgrade added a second, parallel set of entities (`ENSv2Registry`, `EN
 - **A missing `Domain` or `ENSv2NamePath` row does not mean a name is invalid or unregistered.** When a registry is linked under a parent *after* it already has registrations ("late-linking"), those pre-existing registrations are deliberately never backfilled into `Domain`/`ENSv2NamePath` — that's a bounded-cost guarantee, not a bug. They're still reachable through `ENSv2Namespace`, `ENSv2NamespaceLink`, and `ENSv2NameSlot`.
 - **For full ENSv2 coverage, query the registry/namespace/slot graph directly** rather than relying only on `Domain`/`ENSv2NamePath`.
 - **Labels are stored exactly as emitted by ENSv2 registry events.** The subgraph does not expose a `normalizedLabel` field and does not perform ENSIP-15 normalization in mappings — normalize user input client-side before hashing or querying by name.
-- **`Resolver`/`ENSv2Resolver` remain direct-record projections.** They reflect records set directly on a resolver address + node, but are not authoritative for *effective* resolution when an ENSv2 alias is active. Check `ENSv2ResolverAlias` for the name you're resolving, or call `PermissionedResolver.resolve()` directly for exact resolver behavior.
+- **PermissionedResolver is recordId-keyed.** Query `ENSv2ResolverLink` for the resolver + node association, then follow `record` to its current addresses, text, contenthash, data, ABI, and interface state. The deprecated `ENSv2ResolverAlias`/`ENSv2ResolverResource` draft entities are retained only for GraphQL compatibility and are not written by the September deployment.
+- **Legacy `Resolver` projection is current-state compatibility, not resolver history.** Explicitly linked PermissionedResolver records project address/contenthash/text-key state into an existing materialized `Domain`; shared record updates fan out to every active explicit link. The projection does not synthesize classic `ResolverEvent` rows, does not create late-linked `Domain` rows, and leaves name/data/ABI/interface values native-only.
+- **Default-record fallback is native-only.** A name with no explicit `_recordIds` entry resolves through the record linked to the DNS root name. That affected name set is not enumerable, so the subgraph does not copy the root record into every legacy `Resolver`. Query the native link/record graph and call `PermissionedResolver.resolve()` when exact effective resolution, including fallback, is required.
+- **Shared-record fanout is an accepted Sepolia operational risk.** A record update currently rebuilds the representable legacy snapshot for every active explicit link, so work grows with both linked-name count and the record's observed address/text keys. ENS expects explicit sharing to remain rare and gates it behind `ROLE_LINK`; monitor indexing lag and subgraph health on Sepolia and revisit field-specific fanout or native-only projection if actual usage is materially higher. There is deliberately no silent fanout cap that could leave only some names stale.
+- **PublicResolverV2 remains node-keyed.** It emits classic profile events and is covered once by the existing addressless `Resolver` handlers; its `DataChanged` profile is additionally exposed as `ENSv2ResolverData`.
 - **Migrated `.eth` names carry both legacy and ENSv2 state.** Once a migrated name reaches `REGISTERED` status, ENSv2 events keep the legacy `Registration`/`Domain`/`WrappedDomain` owner and expiry fields in sync going forward — `domain.owner` itself is never corrected (it reflects the real, retired ENSv1 registry state), only `wrappedOwner`/`registrant`. `Registration.expiryDate` stays the raw ENSv2 expiry; `Domain.expiryDate` includes the ENSv2 grace period on top of it.
 
 Note on query field casing: graph-node derives root query field names from entity type names by lowercasing the whole `ENSv2` prefix, not just the first character — so `ENSv2Registry` becomes `ensv2Registry`/`ensv2Registries`, confirmed directly against a live deployment's introspection schema.
@@ -134,7 +138,7 @@ Note on query field casing: graph-node derives root query field names from entit
 
 ```graphql
 {
-  ensv2Resource(id: "<registry-address>-<resource>") {
+  ensv2Resources(where: { registry: "0x<40-hex-address>", resource: "5" }) {
     id
     slot {
       id
@@ -142,7 +146,7 @@ Note on query field casing: graph-node derives root query field names from entit
     }
     active
   }
-  ensv2RoleAssignments(where: { resourceEntity: "<registry-address>-<resource>" }) {
+  ensv2RoleAssignments(where: { contract: "0x<40-hex-address>", resource: "5" }) {
     id
     account {
       id
@@ -152,14 +156,38 @@ Note on query field casing: graph-node derives root query field names from entit
 }
 ```
 
-## Example query: effective resolution via an ENSv2 alias
+ENSv2 native IDs are `Bytes`, encoded as fixed-width concatenation without separators. For example, a resource ID is the 20-byte registry address followed by the 32-byte big-endian resource value. Do not use the older `<address>-<resource>` placeholder form.
+
+## Example query: PermissionedResolver link and record state
 
 ```graphql
 {
-  ensv2ResolverAliases(where: { active: true }) {
-    id
-    fromNameDecoded
-    toNameDecoded
+  ensv2ResolverLinks(
+    where: {
+      resolver: "0x<40-hex-resolver-address>"
+      node: "0x<64-hex-namehash>"
+    }
+  ) {
+    node
+    nameDecoded
+    active
+    recordId
+    record {
+      contenthash
+      primaryName
+      addresses {
+        coinType
+        addressBytes
+      }
+      texts {
+        key
+        value
+      }
+      datas {
+        key
+        value
+      }
+    }
   }
 }
 ```
