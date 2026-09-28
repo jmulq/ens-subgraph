@@ -3,11 +3,10 @@
 // checkValidLabel, createEventID, uint256ToByteArray, i32ToBytes,
 // createOrLoadAccount, createOrLoadDomain) — do not duplicate those here.
 //
-// Every composite id below is a fixed-width Bytes concatenation with no
-// delimiter (fix plan Phase 5 Decision 1): each component is either already
-// a fixed byte width (an address or namehash) or made one via
+// Every composite ID below is a fixed-width Bytes concatenation. Each
+// component is either fixed-width already or made fixed-width via
 // uint256ToByteArray (32-byte big-endian BigInt) / i32ToBytes (4-byte
-// big-endian counter) — so there's no ambiguity despite no separator byte.
+// big-endian counter), so no delimiter is needed.
 import { Address, BigInt, Bytes, crypto } from "@graphprotocol/graph-ts";
 import { concat, i32ToBytes, uint256ToByteArray } from "./utils";
 import {
@@ -30,6 +29,38 @@ export function resourceId(registry: Bytes, resource: BigInt): Bytes {
 
 export function tokenEntityId(registry: Bytes, tokenId: BigInt): Bytes {
   return Bytes.fromByteArray(concat(registry, uint256ToByteArray(tokenId)));
+}
+
+export function resolverRecordId(resolver: Bytes, recordId: BigInt): Bytes {
+  return Bytes.fromByteArray(concat(resolver, uint256ToByteArray(recordId)));
+}
+
+export function resolverLinkId(resolver: Bytes, node: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(resolver, node));
+}
+
+export function resolverMembershipId(record: Bytes, node: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(record, node));
+}
+
+export function resolverLinkIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
+}
+
+export function resolverAddressId(record: Bytes, coinType: BigInt): Bytes {
+  return Bytes.fromByteArray(concat(record, uint256ToByteArray(coinType)));
+}
+
+export function resolverAddressIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
+}
+
+export function resolverTextId(record: Bytes, keyHash: Bytes): Bytes {
+  return Bytes.fromByteArray(concat(record, keyHash));
+}
+
+export function resolverTextIndexId(record: Bytes, index: i32): Bytes {
+  return Bytes.fromByteArray(concat(record, i32ToBytes(index)));
 }
 
 // Port of LibLabel.withVersion(anyId, 0) from contracts-v2's
@@ -89,7 +120,7 @@ export function namespaceLinkId(
 // same way as ensRegistry.ts::makeSubnode's keccak256(concat(parentNode,
 // labelHash)) — here parentNode is a namespace's baseNamehash. Lives here
 // (not ensv2Paths.ts, where it originated) because ensv2Domain.ts also
-// needs it (to recover a slot's Domain id at transfer time, Phase 6) and
+// needs it to recover a slot's Domain ID at transfer time, and
 // ensv2Paths.ts already imports from ensv2Domain.ts — putting it in this
 // dependency-free utils file avoids a circular import either way.
 export function pathNamehash(baseNamehash: Bytes, labelhash: Bytes): Bytes {
@@ -99,9 +130,7 @@ export function pathNamehash(baseNamehash: Bytes, labelhash: Bytes): Bytes {
 // Shared "append index row, bump counter" sequence — used both when a
 // registry's root namespace is bootstrapped (ensv2Discovery.ts) and when a
 // namespace is created/found via a subregistry link (ensv2Paths.ts). Used to
-// be duplicated inline in both call sites (audit finding 23); lives here,
-// not in either of those files, for the same circular-import reason
-// pathNamehash does.
+// live here to avoid duplication and circular imports.
 export function appendRegistryNamespaceIndex(
   registry: ENSv2Registry,
   namespace: ENSv2Namespace

@@ -1,33 +1,15 @@
 #!/usr/bin/env node
-// Two independent drift-detection checks, both catching the same class of
-// bug: a hardcoded address silently going stale against its real source of
-// truth after a contract redeploy.
+// Detects address and start-block drift in two places:
 //
-// 1. subgraph.yaml vs networks.json — every data source's (network,
-//    address) pair in subgraph.yaml is consistent with networks.json. The
-//    gap that let a mainnet-labeled-but-Sepolia-addressed manifest ship
-//    unguarded (audit finding 1 / #27, finding 17).
-// 2. src/ensv2Constants.ts vs contracts-v2's own deployment artifacts —
-//    ensv2Constants.ts's hardcoded per-network Address.fromString(...)
-//    literals (RootRegistry/ETHRegistry/migration controllers/registry,
-//    resolver, and HCA implementation addresses) aren't data sources, so
-//    networks.json has no room for them and check 1 can't see them at all.
-//    This project has already had one real incident from exactly this gap:
-//    "Phase 10" existed specifically because these addresses changed under
-//    a contract redeploy and every hardcoded reference had to be found and
-//    updated by hand (audit finding 34 / #34). Cross-checks against
-//    contracts-v2/contracts/deployments/sepolia/*.json — the actual
-//    deployment records these addresses were originally sourced from —
-//    skipped gracefully (not a failure) if that submodule isn't checked
-//    out, since contracts-v2 is a third-party submodule that won't exist
-//    in a standalone `ens-subgraph` clone.
+// 1. subgraph.yaml vs networks.json for manifest data sources.
+// 2. src/ensv2Constants.ts vs the ENSv2 deployment artifacts for addresses
+//    that are used by mappings but are not manifest data sources.
 //
-// No YAML/JS-parser dependency for either check: subgraph.yaml's data
-// source blocks are flat `key: value` lines at a fixed indent, and
-// ensv2Constants.ts's address literals follow one consistent
-// `Address.fromString("0x...")` shape — plain line/regex scans are enough
-// for both, avoiding a new dependency in a package.json that currently has
-// none.
+// The deployment-artifact check is skipped when a sibling contracts-v2
+// checkout is unavailable, so this script also works in a standalone clone.
+//
+// Both files use stable shapes that can be checked without adding parser
+// dependencies.
 //
 // Usage: node scripts/validate-networks.mjs
 // Exits non-zero (and prints every problem, from both checks) if anything
@@ -40,7 +22,7 @@ import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
-const workspaceRoot = join(repoRoot, "..");
+const parentDir = join(repoRoot, "..");
 
 function parseDataSources(yamlText) {
   // Matches both the `dataSources:` and `templates:` sections — both use
@@ -48,10 +30,20 @@ function parseDataSources(yamlText) {
   const lines = yamlText.split("\n");
   const sources = [];
   let current = null;
+  let inTemplates = false;
   for (const line of lines) {
+    if (/^templates:\s*$/.test(line)) {
+      inTemplates = true;
+    }
     if (/^\s{2}-\s+kind:\s+ethereum\/contract\s*$/.test(line)) {
       if (current) sources.push(current);
-      current = { name: null, network: null, address: null };
+      current = {
+        name: null,
+        network: null,
+        address: null,
+        startBlock: null,
+        isTemplate: inTemplates,
+      };
       continue;
     }
     if (!current) continue;
@@ -62,6 +54,8 @@ function parseDataSources(yamlText) {
       current.network = m[1];
     } else if ((m = line.match(/^\s{6}address:\s*"?([0-9a-fA-Fx]+)"?\s*$/))) {
       current.address = m[1].toLowerCase();
+    } else if ((m = line.match(/^\s{6}startBlock:\s*(\d+)\s*$/))) {
+      current.startBlock = Number(m[1]);
     }
   }
   if (current) sources.push(current);
@@ -100,10 +94,27 @@ function checkSubgraphYamlVsNetworksJson() {
       continue;
     }
 
-    if (src.address && entry.address && entry.address.toLowerCase() !== src.address) {
-      problems.push(
-        `${src.name}: subgraph.yaml hardcodes ${src.address} for network "${src.network}", but networks.json's "${src.network}" entry says ${entry.address.toLowerCase()}.`
-      );
+    if (src.address) {
+      if (!entry.address) {
+        problems.push(
+          `${src.name}: subgraph.yaml has address ${src.address}, but networks.json's "${src.network}" entry has no address.`
+        );
+      } else if (entry.address.toLowerCase() !== src.address) {
+        problems.push(
+          `${src.name}: subgraph.yaml hardcodes ${src.address} for network "${src.network}", but networks.json's "${src.network}" entry says ${entry.address.toLowerCase()}.`
+        );
+      }
+    }
+    if (src.startBlock !== null) {
+      if (entry.startBlock === undefined) {
+        problems.push(
+          `${src.name}: subgraph.yaml starts at block ${src.startBlock}, but networks.json's "${src.network}" entry has no startBlock.`
+        );
+      } else if (entry.startBlock !== src.startBlock) {
+        problems.push(
+          `${src.name}: subgraph.yaml starts at block ${src.startBlock} for network "${src.network}", but networks.json says ${entry.startBlock}.`
+        );
+      }
     }
   }
 
@@ -113,10 +124,50 @@ function checkSubgraphYamlVsNetworksJson() {
   return problems;
 }
 
-// function name -> ordered list of contracts-v2/.../sepolia/*.json files
-// whose own "address" field is that function's real source of truth. Order
-// matters for getMigrationControllers, whose array literal in
-// ensv2Constants.ts is [Locked, Unlocked] in that exact order.
+function checkRequestedNetwork(requestedNetwork) {
+  if (!requestedNetwork) return [];
+
+  const yamlText = readFileSync(join(repoRoot, "subgraph.yaml"), "utf8");
+  const networks = JSON.parse(
+    readFileSync(join(repoRoot, "networks.json"), "utf8")
+  );
+  const sources = parseDataSources(yamlText);
+  const target = networks[requestedNetwork];
+  if (!target) {
+    return [`requested deployment network "${requestedNetwork}" has no networks.json block.`];
+  }
+
+  const problems = [];
+  for (const src of sources) {
+    // Templates have no static chain position. Addressless data sources do,
+    // and still require a target-network startBlock.
+    if (!src.name || src.isTemplate) continue;
+    const entry = target[src.name];
+    if (!entry) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" has no complete networks.json entry. Deployment is disabled until its real address/start block is configured.`
+      );
+      continue;
+    }
+    if (src.address !== null && !entry.address) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" is missing its address.`
+      );
+    }
+    if (entry.startBlock === undefined) {
+      problems.push(
+        `${src.name}: requested network "${requestedNetwork}" is missing its startBlock.`
+      );
+    }
+  }
+  console.log(
+    `[target] ${requestedNetwork}: ${sources.length} data source(s)/template(s) checked for deployment completeness.`
+  );
+  return problems;
+}
+
+// Function name -> ordered deployment files. Order matters for
+// getMigrationControllers, whose values are [Locked, Unlocked].
 const CONSTANTS_TO_DEPLOYMENT = {
   getRootRegistryAddress: ["RootRegistry.json"],
   getEthRegistryAddress: ["ETHRegistry.json"],
@@ -130,13 +181,7 @@ const CONSTANTS_TO_DEPLOYMENT = {
   ],
 };
 
-// Extracts every Address.fromString("0x...") literal that textually
-// appears within one exported function's body (from `export function
-// <name>` up to the next `export function`, or end of file). Each of
-// these functions has exactly one such literal per address it returns (the
-// only other return path is `Address.zero()`, never a second
-// Address.fromString call), so a plain regex scan over that slice is
-// unambiguous — no need to parse the "sepolia" branch out specifically.
+// Extract Address.fromString("0x...") literals from one exported function.
 function extractAddressLiterals(tsText, functionName) {
   const startMarker = `export function ${functionName}(`;
   const startIdx = tsText.indexOf(startMarker);
@@ -149,7 +194,7 @@ function extractAddressLiterals(tsText, functionName) {
 
 function checkEnsv2ConstantsVsContractsV2() {
   const deploymentsDir = join(
-    workspaceRoot,
+    parentDir,
     "contracts-v2",
     "contracts",
     "deployments",
@@ -218,8 +263,17 @@ function checkEnsv2ConstantsVsContractsV2() {
 }
 
 function main() {
+  const networkArgIndex = process.argv.indexOf("--network");
+  const requestedNetwork =
+    networkArgIndex === -1 ? null : process.argv[networkArgIndex + 1];
+  if (networkArgIndex !== -1 && !requestedNetwork) {
+    console.error("validate-networks: --network requires a network name.");
+    process.exit(2);
+  }
   const problems = [
-    ...checkSubgraphYamlVsNetworksJson(),
+    ...(requestedNetwork
+      ? checkRequestedNetwork(requestedNetwork)
+      : checkSubgraphYamlVsNetworksJson()),
     ...checkEnsv2ConstantsVsContractsV2(),
   ];
 
@@ -227,7 +281,7 @@ function main() {
     console.error(`\nvalidate-networks: ${problems.length} problem(s) found:\n`);
     for (const p of problems) console.error(`  - ${p}`);
     console.error(
-      "\nSee docs/ENSv2_Subgraph_Audit.md (Finding 1) / issue #27 for check 1's incident, and issue #34 for check 2's."
+      "\nResolve the configuration errors above before building or deploying the subgraph."
     );
     process.exit(1);
   }

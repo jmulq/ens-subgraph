@@ -1,5 +1,5 @@
-import { Address, Bytes } from "@graphprotocol/graph-ts";
-import { createLegacyEventID } from "./utils";
+import { Address, Bytes, crypto } from "@graphprotocol/graph-ts";
+import { concat, createLegacyEventID } from "./utils";
 
 import {
   ABIChanged as ABIChangedEvent,
@@ -7,6 +7,7 @@ import {
   AddressChanged as AddressChangedEvent,
   AuthorisationChanged as AuthorisationChangedEvent,
   ContenthashChanged as ContenthashChangedEvent,
+  DataChanged as DataChangedEvent,
   InterfaceChanged as InterfaceChangedEvent,
   NameChanged as NameChangedEvent,
   PubkeyChanged as PubkeyChangedEvent,
@@ -22,6 +23,8 @@ import {
   AuthorisationChanged,
   ContenthashChanged,
   Domain,
+  ENSv2Resolver,
+  ENSv2ResolverData,
   InterfaceChanged,
   MulticoinAddrChanged,
   NameChanged,
@@ -36,7 +39,7 @@ export function handleAddrChanged(event: AddrChangedEvent): void {
   account.save();
 
   let resolver = new Resolver(
-    createResolverID(event.params.node, event.address)
+    createResolverID(event.params.node, event.address),
   );
   resolver.domain = event.params.node.toHexString();
   resolver.address = event.address;
@@ -143,7 +146,7 @@ export function handleTextChanged(event: TextChangedEvent): void {
 }
 
 export function handleTextChangedWithValue(
-  event: TextChangedWithValueEvent
+  event: TextChangedWithValueEvent,
 ): void {
   let resolver = getOrCreateResolver(event.params.node, event.address, false);
 
@@ -182,6 +185,38 @@ export function handleContentHashChanged(event: ContenthashChangedEvent): void {
   resolverEvent.save();
 }
 
+// PublicResolverV2's generic data profile is node-keyed like its classic
+// profiles, so it belongs on this existing addressless resolver route. The
+// raw data is not recoverable from the event because it is indexed; retain
+// the key and update metadata without fabricating a value.
+export function handleDataChanged(event: DataChangedEvent): void {
+  let resolverId: Bytes = event.address;
+  let resolver = ENSv2Resolver.load(resolverId);
+  if (resolver == null) {
+    resolver = new ENSv2Resolver(resolverId);
+    resolver.address = event.address;
+    resolver.save();
+  }
+
+  let keyHash = Bytes.fromByteArray(
+    crypto.keccak256(Bytes.fromUTF8(event.params.key)),
+  );
+  let id = Bytes.fromByteArray(
+    concat(concat(resolverId, event.params.node), keyHash),
+  );
+  let data = ENSv2ResolverData.load(id);
+  if (data == null) {
+    data = new ENSv2ResolverData(id);
+    data.resolver = resolverId;
+    data.node = event.params.node;
+  }
+  data.key = event.params.key;
+  data.blockNumber = event.block.number;
+  data.transactionID = event.transaction.hash;
+  data.logIndex = event.logIndex;
+  data.save();
+}
+
 export function handleInterfaceChanged(event: InterfaceChangedEvent): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
@@ -195,7 +230,7 @@ export function handleInterfaceChanged(event: InterfaceChangedEvent): void {
 }
 
 export function handleAuthorisationChanged(
-  event: AuthorisationChangedEvent
+  event: AuthorisationChangedEvent,
 ): void {
   const resolver = getOrCreateResolver(event.params.node, event.address, true);
 
@@ -234,7 +269,7 @@ export function handleVersionChanged(event: VersionChangedEvent): void {
 function getOrCreateResolver(
   node: Bytes,
   address: Address,
-  saveOnNew: boolean
+  saveOnNew: boolean,
 ): Resolver {
   let id = createResolverID(node, address);
   let resolver = Resolver.load(id);

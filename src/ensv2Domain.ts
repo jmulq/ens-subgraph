@@ -4,9 +4,8 @@
 // names), and real .eth registrations additionally get a legacy Registration
 // row. Only ever creates rows for names that never existed in ENSv1.
 //
-// Migration correction (Phase 6): re-reading the proposal's migration bullet
-// literally, domain.owner is never mentioned in either the wrapped or
-// unwrapped branch — deliberately, since it reflects ENSv1 ENSRegistry-level
+// For migrated names, domain.owner remains the ENSv1 registry-level owner,
+// since it reflects ENSv1 ENSRegistry-level
 // ownership, which the migration's own "graveyard" voiding step already
 // legitimately moved away from the real user (a true fact about the retired
 // v1 system, not something to overwrite). wrappedOwner/registrant are
@@ -27,9 +26,10 @@ import {
   WrappedDomain,
 } from "./types/schema";
 import { LabelRegistered } from "./types/RootRegistry/PermissionedRegistry";
+import { syncRegistrationFromSlot } from "./ensv2Registrar";
 
 // Recovers a slot's namehash (Domain.id) without a ENSv2NamePath in hand —
-// needed at transfer time (Phase 6), when only the slot is available.
+// needed at transfer time, when only the slot is available.
 // Read-only mirror of materializePathsForSlot's namespace loop; ENSv2NameSlot
 // deliberately has no direct Domain/namehash field of its own, only
 // labelhash, so this has to be recomputed rather than stored.
@@ -53,16 +53,14 @@ export function getEthDomainId(slot: ENSv2NameSlot): string | null {
     // without this check, any active namespace whose namehash happens to
     // resolve ETHRegistry as a subregistry would match, and setSubregistry
     // has no on-chain restriction on which registry a caller points their
-    // own subregistry at (audit finding 12 / originally-closed issue #28,
-    // reopened with that evidence). Filtering on baseNamehash is what makes
+    // own subregistry at. Filtering on baseNamehash makes
     // this deterministic instead of "whichever link was indexed first."
     if (!namespace.baseNamehash.equals(ETH_NODE)) {
       continue;
     }
     let pathId = pathNamehash(namespace.baseNamehash, slot.labelhash);
     let path = ENSv2NamePath.load(pathId);
-    // Nullable-Bytes truthy check, not `!== null`
-    // (AssemblyScript compiler gotcha, fix plan Phase 5).
+    // Nullable Bytes require a truthy check before dereferencing.
     if (path != null && path.domain) {
       return path.domain!;
     }
@@ -109,7 +107,7 @@ export function correctMigratedLegacyOwner(
 // name — correctMigratedLegacyOwner above only runs for migratedFromV1
 // slots, so without this, a v2-native name's Domain.owner/registrant and
 // Registration.registrant permanently retain the original registrant after
-// the very first transfer (audit finding 8). No WrappedDomain branching is
+// the very first transfer. No WrappedDomain branching is
 // needed here the way correctMigratedLegacyOwner has: a v2-native name has
 // no legacy NameWrapper-wrapped concept to detect.
 export function updateEthDomainOwner(
@@ -148,13 +146,9 @@ function syncEthRegistration(
   if (slotExpiryDate) {
     registration.expiryDate = slotExpiryDate!;
   }
-  // Migrated names: registrant correction (if any) is entirely
-  // correctMigratedLegacyOwner's job (branch-aware — wrapped names must NOT
-  // get registrant overwritten here) — UNLESS this is a brand-new row with
-  // no pre-existing v1 legacy value for correctMigratedLegacyOwner to find
-  // and correct; registrant is non-nullable, so it must be set here instead
-  // (same fix as projectPathToDomain's isNewDomain case, and for the same
-  // Sepolia block #11480885 crash).
+  // Existing migrated rows are corrected by correctMigratedLegacyOwner so
+  // wrapped names do not receive a registrant. New rows need this required
+  // field initialized before they can be saved.
   if (!isV1Migration || isNewRegistration) {
     let registrantId = slot.registrant;
     if (registrantId) {
@@ -175,8 +169,7 @@ export function projectPathToDomain(
 ): void {
   let ownerId = slot.owner;
   if (!ownerId) {
-    // Phase 2's handleLabelRegistered always sets slot.owner before this
-    // runs — defensive only, should never actually trigger.
+    // handleLabelRegistered sets slot.owner before this projection.
     log.warning(
       "projectPathToDomain: slot {} has no owner, skipping projection",
       [slot.id.toHexString()]
@@ -197,13 +190,8 @@ export function projectPathToDomain(
     domain.labelName = path.label;
   }
   domain.labelhash = path.labelhash;
-  // Migrated names: domain.owner is left untouched ONLY when a pre-existing
-  // row is already carrying the v1 graveyard-voided value (see file header).
-  // A brand-new row (no prior ENSv1 Domain ever existed for this path) has
-  // no such legacy value to protect — owner is non-nullable, so it must be
-  // set here or Domain#save fails (seen on Sepolia: block #11480885 crashed
-  // indexing when a migration-flagged registration materialised into a
-  // namespace with no pre-existing v1 Domain).
+  // Preserve the V1 owner on existing migrated rows. A new compatibility row
+  // has no legacy value to preserve and needs its required owner initialized.
   if (!isV1Migration || isNewDomain) {
     domain.owner = ownerId!;
   }
@@ -242,6 +230,10 @@ export function projectPathToDomain(
 
   if (isEth) {
     syncEthRegistration(slot, path, event, isV1Migration);
+    // NameRegistered normally follows the registry events in the deployed
+    // registrar, but keeping this reconciliation here makes fixtures and
+    // replays with the opposite ordering converge to the same native row.
+    syncRegistrationFromSlot(slot);
     if (isV1Migration) {
       correctMigratedLegacyOwner(domain.id, slot.labelhash.toHexString(), ownerId!);
     }

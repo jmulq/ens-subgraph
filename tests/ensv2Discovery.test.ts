@@ -69,14 +69,13 @@ const createProxyDeployedEvent = (
 // implementation address that's neither a known registry impl (see the
 // USER/WRAPPER tests below) nor the known resolver impl (see the
 // no-row-created test below) still gets templated and creates an
-// ENSv2Registry row, classified UNKNOWN — the same defensive default as
-// before GitHub #33/#36's classification fix, for any future/unrecognized
-// implementation this deployment doesn't know about yet. What this test
+// ENSv2Registry row classified UNKNOWN for any unrecognized implementation.
+// What this test
 // *can't* assert (no dataSourceCount/dataSourceExists helper exists in the
 // installed matchstick-as) is that ENSv2RegistryTemplate.create() actually
-// registered a dynamic data source — that needs a real graph-node/Subgraph
-// Studio check per the Phase 1 plan's verification section.
-test("handleProxyDeployed creates an ENSv2Registry row with kind UNKNOWN for an unrecognized implementation, and captures the implementation address (audit finding 4)", () => {
+// registered a dynamic data source; that requires an integration test against
+// graph-node.
+test("handleProxyDeployed creates an UNKNOWN ENSv2Registry for an unrecognized implementation", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let event = createProxyDeployedEvent(PROXY_ADDRESS, IMPLEMENTATION);
@@ -98,7 +97,7 @@ test("handleProxyDeployed creates an ENSv2Registry row with kind UNKNOWN for an 
   );
 });
 
-test("handleProxyDeployed classifies a UserRegistry implementation as kind USER (GitHub #33)", () => {
+test("handleProxyDeployed classifies a UserRegistry implementation as USER", () => {
   dataSourceMock.setNetwork("sepolia");
 
   // This file has no clearStore()/beforeEach between tests, so each test
@@ -113,7 +112,7 @@ test("handleProxyDeployed classifies a UserRegistry implementation as kind USER 
   assert.fieldEquals("ENSv2Registry", id, "kind", "USER");
 });
 
-test("handleProxyDeployed classifies a WrapperRegistry implementation as kind WRAPPER (GitHub #33)", () => {
+test("handleProxyDeployed classifies a WrapperRegistry implementation as WRAPPER", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let wrapperProxyAddress = "0x44444444444444444444444444444444444444dd";
@@ -124,7 +123,7 @@ test("handleProxyDeployed classifies a WrapperRegistry implementation as kind WR
   assert.fieldEquals("ENSv2Registry", id, "kind", "WRAPPER");
 });
 
-test("handleProxyDeployed skips templating and creates no ENSv2Registry row for a PermissionedResolver implementation (GitHub #36)", () => {
+test("handleProxyDeployed creates no registry row for a PermissionedResolver implementation", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let resolverProxyAddress = "0x55555555555555555555555555555555555555ee";
@@ -137,9 +136,8 @@ test("handleProxyDeployed skips templating and creates no ENSv2Registry row for 
 
 // StandaloneHCAFactory shares this VerifiableFactory instance rather than
 // deploying its own, so an HCA deployment fires the identical ProxyDeployed
-// event a registry deployment does — same shape as the resolver case above,
-// same fix (GitHub #72 follow-up): no ENSv2Registry row, a dedicated
-// ENSv2HCA row instead.
+// event a registry deployment does. Store a dedicated ENSv2HCA row rather
+// than an ENSv2Registry row.
 test("handleProxyDeployed skips templating and creates an ENSv2HCA row, not an ENSv2Registry row, for a StandaloneHCA implementation", () => {
   dataSourceMock.setNetwork("sepolia");
 
