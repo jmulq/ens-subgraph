@@ -34,7 +34,7 @@ dataSources:
         - OperatorApproval
       abis:
         - name: EnsRegistry
-          file: ./abis/Registry.json
+          file: ./abis/v1/Registry.json
       eventHandlers:
         - event: "Transfer(indexed bytes32,address)"
           handler: handleTransfer
@@ -66,7 +66,7 @@ dataSources:
         - OperatorApproval
       abis:
         - name: EnsRegistry
-          file: ./abis/Registry.json
+          file: ./abis/v1/Registry.json
       eventHandlers:
         - event: "Transfer(indexed bytes32,address)"
           handler: handleTransferOldRegistry
@@ -103,7 +103,7 @@ dataSources:
         - ENSv2ResolverData
       abis:
         - name: Resolver
-          file: ./abis/PublicResolver.json
+          file: ./abis/v1/PublicResolver.json
       eventHandlers:
         - event: "ABIChanged(indexed bytes32,indexed uint256)"
           handler: handleABIChanged
@@ -154,7 +154,7 @@ dataSources:
         - RegistrarController
       abis:
         - name: BaseRegistrar
-          file: ./abis/BaseRegistrar.json
+          file: ./abis/v1/BaseRegistrar.json
       eventHandlers:
         - event: "NameRegistered(indexed uint256,indexed address,uint256)"
           handler: handleNameRegistered
@@ -188,7 +188,7 @@ dataSources:
         - ContractOwnership
       abis:
         - name: LegacyEthRegistrarController
-          file: ./abis/LegacyEthRegistrarController.json
+          file: ./abis/v1/LegacyEthRegistrarController.json
       eventHandlers:
         - event: >-
             NameRegistered(string,indexed bytes32,indexed
@@ -216,7 +216,7 @@ dataSources:
         - ContractOwnership
       abis:
         - name: WrappedEthRegistrarController
-          file: ./abis/WrappedEthRegistrarController.json
+          file: ./abis/v1/WrappedEthRegistrarController.json
       eventHandlers:
         - event: >-
             NameRegistered(string,indexed bytes32,indexed
@@ -246,7 +246,7 @@ dataSources:
         - RegistrarController
       abis:
         - name: NameWrapper
-          file: ./abis/NameWrapper.json
+          file: ./abis/v1/NameWrapper.json
       eventHandlers:
         - event: "NameWrapped(indexed bytes32,bytes,address,uint32,uint64)"
           handler: handleNameWrapped
@@ -284,7 +284,7 @@ dataSources:
         - ContractOwnership
       abis:
         - name: UnwrappedEthRegistrarController
-          file: ./abis/UnwrappedEthRegistrarController.json
+          file: ./abis/v1/UnwrappedEthRegistrarController.json
       eventHandlers:
         - event: >-
             NameRegistered(string,indexed bytes32,indexed
@@ -312,10 +312,8 @@ dataSources:
       address: "0x9703DBD26dAB89504490994138cF2c575251a9cE"
       abi: PermissionedRegistry
       startBlock: 11708988
-    # Anchored — RootRegistry, ETHRegistry, and the ENSv2Registry template
-    # below all bind the same PermissionedRegistry contract type and share
-    # this exact mapping (audit finding 14: this was previously duplicated
-    # ~50 lines x3, an easy spot for the three copies to drift).
+    # RootRegistry, ETHRegistry, and the dynamic registry template share the
+    # same PermissionedRegistry mapping.
     mapping: &ensv2RegistryMapping
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -340,8 +338,7 @@ dataSources:
         - ENSv2ResolverUpdate
         - ENSv2SubregistryUpdate
         - OperatorApproval
-        # Actually written via ensv2Paths.ts/ensv2Domain.ts imports but
-        # missing from this list previously (audit finding 32).
+        # Written by helpers called from this mapping.
         - Domain
         - Resolver
         - Registration
@@ -360,7 +357,7 @@ dataSources:
         - ENSv2ResolverResourceArgument
       abis:
         - name: PermissionedRegistry
-          file: ./abis/PermissionedRegistry.json
+          file: ./abis/v2/PermissionedRegistry.json
       eventHandlers:
         - event: "LabelRegistered(indexed uint256,indexed bytes32,string,address,uint64,indexed address)"
           handler: handleLabelRegistered
@@ -415,10 +412,10 @@ dataSources:
       entities:
         - ENSv2Registration
         - ContractOwnership
-        - Account # actually written via createOrLoadAccount (audit finding 32)
+        - Account
       abis:
         - name: ETHRegistrar
-          file: ./abis/ETHRegistrar.json
+          file: ./abis/v2/ETHRegistrar.json
       eventHandlers:
         - event: "NameRegistered(indexed uint256,string,address,address,address,uint64,address,indexed bytes32,uint256,uint256)"
           handler: handleNameRegistered
@@ -444,7 +441,7 @@ dataSources:
         - ENSv2HCA
       abis:
         - name: VerifiableFactory
-          file: ./abis/VerifiableFactory.json
+          file: ./abis/v2/VerifiableFactory.json
       eventHandlers:
         - event: "ProxyDeployed(indexed address,indexed address,uint256,address)"
           handler: handleProxyDeployed
@@ -474,8 +471,7 @@ dataSources:
         - ENSv2ResolverResourceArgument
         - ENSv2RoleAssignment
         - ENSv2RoleChange
-        # Actually written via getOrCreateResolver / processEACRolesChanged
-        # (audit finding 32).
+        # Written by helpers called from this mapping.
         - ENSv2Resolver
         - ENSv2Resource
         - Account
@@ -483,7 +479,7 @@ dataSources:
         - Resolver
       abis:
         - name: PermissionedResolver
-          file: ./abis/PermissionedResolver.json
+          file: ./abis/v2/PermissionedResolver.json
       eventHandlers:
         - event: "EACRolesChanged(indexed uint256,indexed address,uint256,uint256)"
           handler: handleEACRolesChanged

@@ -148,8 +148,7 @@ const createProxyDeployedEvent = (proxyAddress: string): ProxyDeployed => {
   // "salt" (the real ABI's 3rd param, between proxyAddress and
   // implementation) was previously missing here, so event.params.implementation
   // (generated as a fixed-index accessor, not looked up by name) read past
-  // the end of a 3-element array — latent until audit finding 4 made
-  // handleProxyDeployed the first code to actually read it.
+  // the end of a 3-element array once handleProxyDeployed reads it.
   event.parameters.push(
     new ethereum.EventParam(
       "salt",
@@ -171,7 +170,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds these ids as fixed-width Bytes concatenation
 // with no delimiter: addresses are 20 bytes, a BigInt component is a
 // 32-byte big-endian value (src/utils.ts::uint256ToByteArray) — this mirrors

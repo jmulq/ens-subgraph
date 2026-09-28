@@ -7,9 +7,7 @@
 // for its dual ENSRegistry/ENSRegistryOld sources — structurally identical
 // classes regardless of which data source's codegen output they come from).
 //
-// Phase 1 landed stub handlers plus the root/eth registry-row bootstrap.
-// Phase 2 (this file) fills in real logic for the 4 label-lifecycle events;
-// the rest stay stubs for Phases 3-4/8.
+// Registry lifecycle, ownership, namespace, resolver, and role handlers.
 import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 
 import { getOrCreateRegistry, getOrCreateRootNamespace } from "./ensv2Discovery";
@@ -141,9 +139,8 @@ export function handleLabelRegistered(event: LabelRegistered): void {
   // reservation (handleLabelReserved) already creates this row before any
   // real registration happens, so a reserved-then-first-registered slot was
   // wrongly counted as a re-registration. The contract itself distinguishes
-  // this exact case (PermissionedRegistry.sol::_register, ROLE_WAS_RESERVED)
-  // — mirror that by checking the PRE-mutation status, not mere row
-  // existence (audit finding 10).
+  // this exact case (PermissionedRegistry.sol::_register, ROLE_WAS_RESERVED),
+  // so check the pre-mutation status rather than mere row existence.
   let isReRegistration = slot != null && slot.status != "RESERVED";
   if (slot == null) {
     slot = new ENSv2NameSlot(id);
@@ -170,8 +167,8 @@ export function handleLabelRegistered(event: LabelRegistered): void {
   // ::_register), including to the zero address — which fires no
   // ResolverUpdated/SubregistryUpdated event. Without resetting here, a
   // re-registration that doesn't set a resolver/subregistry in the same
-  // call leaves these fields pointing at the PREVIOUS owner's values
-  // indefinitely (audit finding 15). handleResolverUpdated/
+  // call would leave these fields pointing at the previous owner's values.
+  // handleResolverUpdated/
   // handleSubregistryUpdated will overwrite these again later in the same
   // transaction if the registration call did set them.
   slot.resolver = null;
@@ -196,9 +193,7 @@ export function handleLabelRegistered(event: LabelRegistered): void {
   history.isV1Migration = isV1Migration;
   history.save();
 
-  // This reload looks redundant with bootstrapRegistry's own internal
-  // getOrCreateRegistry call above (fix-plan audit finding 9 originally
-  // flagged it as exactly that) — it is NOT. For a ROOT registry,
+  // Reload after bootstrap because, for a ROOT registry,
   // bootstrapRegistry also calls getOrCreateRootNamespace, which does its
   // OWN independent ENSv2Registry.load(...)/namespaceCount+=1/.save() on
   // the same id (ensv2Discovery.ts). graph-ts entities are snapshots, not
@@ -242,8 +237,7 @@ export function handleLabelReserved(event: LabelReserved): void {
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
-  // No history entity — LabelReserved isn't in the proposal's history-entity
-  // event list.
+  // LabelReserved is represented as current slot state only.
 }
 
 export function handleLabelUnregistered(event: LabelUnregistered): void {
@@ -271,9 +265,8 @@ export function handleLabelUnregistered(event: LabelUnregistered): void {
   slot.updatedAtBlock = event.block.number;
   slot.save();
 
-  // Deactivate this slot's own materialised paths (audit finding 7) —
-  // ENSv2NamePath.active was previously never set false anywhere in the
-  // codebase. Bounded by slot.pathCount via the same ENSv2SlotPathIndex
+  // Deactivate this slot's materialised paths. The loop is bounded by
+  // slot.pathCount via ENSv2SlotPathIndex
   // mechanism already used to materialise them (not an unbounded scan).
   // materializePathsForSlot already reactivates a path on re-registration,
   // so this and that together give the primary case a coherent lifecycle.
@@ -430,12 +423,8 @@ export function handleTokenResource(event: TokenResource): void {
   resourceEntity.currentToken = token.id;
   resourceEntity.save();
 
-  // Mirrors the resource-deactivation branch below: on a re-registration
-  // (PermissionedRegistry.sol::_register burns the old tokenId and mints a
-  // new one), the OLD token was previously left permanently active:true —
-  // the only other writer of ENSv2Token.active = false is
-  // handleTokenRegenerated, a different event that doesn't fire here
-  // (audit finding 13).
+  // Re-registration burns the old token and mints a new one. Regeneration is
+  // handled separately by handleTokenRegenerated.
   if (previousTokenId) {
     let isDifferentToken = !previousTokenId!.equals(token.id);
     if (isDifferentToken) {
@@ -448,9 +437,7 @@ export function handleTokenResource(event: TokenResource): void {
     }
   }
 
-  // Nullable-Bytes comparison, not `!==`/`!=` (AssemblyScript
-  // compiler gotcha, fix plan Phase 5): guard with a truthy check, then use
-  // .equals() on the narrowed value.
+  // Narrow nullable Bytes before calling .equals().
   let previousResourceId = slot.currentResource;
   if (previousResourceId) {
     let isDifferentResource = !previousResourceId!.equals(resourceEntity.id);
@@ -526,9 +513,7 @@ export function handleTokenRegenerated(event: TokenRegenerated): void {
       }
       slot.currentToken = newToken.id;
       // Every other slot-touching handler in this file sets updatedAt
-      // alongside updatedAtBlock; this was the one path that didn't,
-      // leaving updatedAt frozen for a slot only ever touched via
-      // regeneration (audit finding 26).
+      // alongside updatedAtBlock.
       slot.updatedAt = event.block.timestamp;
       slot.updatedAtBlock = event.block.number;
       slot.save();
@@ -611,14 +596,8 @@ function makeTokenTransfer(
       slot.updatedAtBlock = block.number;
       slot.save();
 
-      // Keep the legacy-compatibility Domain/Registration owner/registrant
-      // fields live on every transfer, for BOTH migrated and native
-      // ENSv2 .eth names — previously this branch only ran for migrated
-      // slots, so a native ENSv2 name's Domain.owner/registrant and
-      // Registration.registrant permanently retained the original owner
-      // after the very first transfer, contradicting this projection's own
-      // stated purpose of keeping legacy consumers working unchanged
-      // (audit finding 8).
+      // Keep legacy ownership fields synchronized for both migrated and
+      // native ENSv2 .eth names.
       let isEth = slot.registry.equals(getEthRegistryAddress());
       // A regeneration burn is an implementation detail and must not zero
       // legacy ownership. Lifecycle burns retain the legacy zero-address
@@ -718,9 +697,7 @@ export function handleEACRolesChanged(event: EACRolesChanged): void {
   );
 }
 
-// GitHub #73 -- PermissionedRegistry.setURI() updates the registry-level
-// token metadata URI/renderer; current-state fields only, matching the
-// resolver/subregistry pattern elsewhere in this file.
+// PermissionedRegistry.setURI() updates current registry-level metadata.
 export function handleURIUpdated(event: URIUpdated): void {
   bootstrapRegistry(event.address, event.block);
 

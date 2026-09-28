@@ -68,8 +68,7 @@ export function handleNameRegistered(event: NameRegistered): void {
   if (slot != null && slot.expiryDate) {
     registration.expiryDate = slot.expiryDate!;
   } else {
-    // Defensive order-independent fallback for fixtures or nonstandard event
-    // ordering. The later registry event reconciles this to its canonical
+    // The registry event later reconciles this fallback to the canonical
     // absolute expiry through syncRegistrationFromSlot.
     registration.expiryDate = event.block.timestamp.plus(event.params.duration);
   }
@@ -108,9 +107,7 @@ export function handleNameRenewed(event: NameRenewed): void {
   registration.duration = event.params.duration;
   registration.paymentToken = event.params.paymentToken;
   registration.referrer = event.params.referrer;
-  // The contract's own already-resolved absolute expiry (not a delta) —
-  // was sitting right here unread alongside the three siblings above
-  // (audit finding 5).
+  // newExpiry is the contract's absolute expiry, not a duration delta.
   registration.expiryDate = event.params.newExpiry;
   registration.save();
 }

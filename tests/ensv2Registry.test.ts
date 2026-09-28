@@ -416,7 +416,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds these ids as fixed-width Bytes concatenation
 // with no delimiter: addresses are 20 bytes, a BigInt component is a
 // 32-byte big-endian value (src/utils.ts::uint256ToByteArray), a small loop
@@ -939,7 +939,7 @@ test("TransferBatch updates all token rows and writes one history row per id", (
   assert.fieldEquals("ENSv2TokenTransferred", baseHistoryId.concat(i32Hex4(1)), "tokenId", tokenIdB.toString());
 });
 
-test("cross-check with Phase 2: unregister -> re-register produces a new resource incarnation, old one kept but inactive", () => {
+test("unregister then re-register creates a new resource and leaves the old one inactive", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let registryId = Address.fromString(REGISTRY_RESOURCE_CROSS_CHECK).toHexString();
@@ -1062,9 +1062,7 @@ test("handleParentUpdated sets canonicalParentRegistry/Label, then clears both w
   // itself must still update (label validity has nothing to do with
   // whether the parent registry link is real), but the label must be
   // cleared to null rather than either the malformed string or the STALE
-  // previous label sitting next to a new parent (audit finding 20's exact
-  // scenario -- a mismatch between which parent and which label a
-  // consumer sees).
+  // previous label sitting next to a new parent.
   const thirdParentAddress = "0xccccccccccccccccccccccccccccccccccccccc0";
   const invalidLabelEvent = createParentUpdatedEvent(
     registryAddress,
@@ -1137,8 +1135,6 @@ const createURIUpdatedEvent = (
   return event;
 };
 
-// GitHub #73 -- PermissionedRegistry.URIUpdated wasn't wired at all before
-// this fix.
 test("handleURIUpdated sets uri/uriRenderer on the registry, and a later call overwrites both", () => {
   dataSourceMock.setNetwork("sepolia");
 

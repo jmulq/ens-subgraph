@@ -399,7 +399,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds these ids as fixed-width Bytes concatenation
 // with no delimiter (a BigInt component is a 32-byte big-endian value,
 // src/utils.ts::uint256ToByteArray) — these mirror that exact encoding, and

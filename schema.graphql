@@ -457,11 +457,11 @@ type VersionChanged implements ResolverEvent @entity(immutable: true) {
 }
 
 # ---------------------------------------------------------------------------
-# ENSv2 — additive schema per the ENSv2 Subgraph Upgrade Proposal.
+# ENSv2 native and compatibility entities.
 # ENSv2-native entities are the source of truth for registries, namespaces,
 # slots, tokens, resources, and linked paths. Domain (above) and
-# ENSv2NamePath remain materialised projections, per the proposal's
-# "Approach" section's late-link/bounded-cost projection rule.
+# ENSv2NamePath are bounded compatibility projections and do not backfill
+# registrations that predate a namespace link.
 # ---------------------------------------------------------------------------
 
 enum ENSv2RegistryKind {
@@ -489,9 +489,7 @@ enum ENSv2ResolverResourceKind {
 type ENSv2Registry @entity(immutable: false) {
   id: Bytes! # registry address
   address: Bytes!
-  # Captured from VerifiableFactory.ProxyDeployed's own implementation param
-  # (audit finding 4) — used to classify `kind` as USER/WRAPPER via a known
-  # implementation-address-to-kind mapping (see kindForAddress).
+  # Used to classify `kind` via a known implementation-address mapping.
   implementation: Bytes
   kind: ENSv2RegistryKind!
   canonicalParentRegistry: ENSv2Registry
@@ -501,15 +499,14 @@ type ENSv2Registry @entity(immutable: false) {
   discoveredAt: BigInt!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
-  # From PermissionedRegistry.URIUpdated (GitHub #73) — the registry-level
-  # token metadata URI template and the renderer contract computing it.
+  # Registry-level token metadata URI template and renderer.
   # Current-state only, like the sibling resolver/subregistry fields on
   # ENSv2NameSlot — URIUpdated's own history isn't otherwise meaningful.
   uri: String
   uriRenderer: Bytes
 }
-# Two other PermissionedRegistry events were deliberately left unwired
-# (GitHub #73): RegistryCreated() fires from the same constructor path that
+# Two other PermissionedRegistry events are intentionally unwired:
+# RegistryCreated() fires from the same constructor path that
 # ProxyDeployed/bootstrapRegistry already use to create this row, so it adds
 # no information; URI(string,uint256) is part of the standard ERC1155
 # interface this contract implements but is never actually emitted anywhere
@@ -525,9 +522,8 @@ type ENSv2Registry @entity(immutable: false) {
 # deployment does. Recorded separately here rather than folded into
 # ENSv2Registry: an HCA isn't a registry (no namespaces/subdomains under
 # it), so giving it a Registry row — even tagged UNKNOWN — would be wrong,
-# not just imprecise (GitHub #72 follow-up). See contracts-v2/docs/HCA.md
-# for what an HCA actually is (an optional, per-wallet ENS execution
-# account, not the wallet's identity).
+# not just imprecise. An HCA is an optional per-wallet ENS execution account,
+# not the wallet's identity.
 type ENSv2HCA @entity(immutable: false) {
   id: Bytes! # HCA proxy address
   implementation: Bytes!
@@ -625,7 +621,7 @@ type ENSv2Namespace @entity(immutable: false) {
   baseName: String
   baseNamehash: Bytes!
   active: Boolean!
-  pathCount: Int! # needed to enumerate ENSv2NamespacePathIndex (GitHub #47)
+  pathCount: Int! # used to enumerate ENSv2NamespacePathIndex
   createdAt: BigInt!
   createdAtBlock: BigInt!
   updatedAtBlock: BigInt!
@@ -634,7 +630,7 @@ type ENSv2Namespace @entity(immutable: false) {
 }
 
 type ENSv2NamespaceLink @entity(immutable: false) {
-  id: Bytes! # parent registry + parent slot + child address (audit finding 24: this is a genuine upsert across multiple SubregistryUpdated events for the same triple, toggling `active`, not one row per activation)
+  id: Bytes! # parent registry + parent slot + child address
   parentRegistry: ENSv2Registry!
   parentSlot: ENSv2NameSlot
   parentSlotId: BigInt!
@@ -780,7 +776,7 @@ type ENSv2SubregistryUpdate implements ENSv2NameSlotEvent
 }
 
 type ENSv2Registration @entity(immutable: false) {
-  id: Bytes! # registry address + slotId (same scheme as ENSv2NameSlot.id; computed independently at two write sites — handleNameRegistered AND handleNameRenewed both call nameSlotId(...) with the same inputs, audit finding 24)
+  id: Bytes! # registry address + slotId; same scheme as ENSv2NameSlot.id
   slot: ENSv2NameSlot!
   resource: ENSv2Resource
   path: ENSv2NamePath
@@ -788,7 +784,7 @@ type ENSv2Registration @entity(immutable: false) {
   # owner/duration/paymentToken/referrer/base/premium are all unconditionally
   # set from non-optional NameRegistered event params on every creation
   # path in handleNameRegistered — tightened from nullable to match that
-  # actual behavior (audit finding 33).
+  # actual event data.
   owner: Account!
   duration: BigInt!
   paymentToken: Bytes!
@@ -796,8 +792,7 @@ type ENSv2Registration @entity(immutable: false) {
   base: BigInt!
   premium: BigInt!
   registrationDate: BigInt!
-  # Now always set on creation (audit finding 5 fix, ensv2Registrar.ts) —
-  # tightened alongside the other six fields above for the same reason.
+  # Always set from the registration event on creation.
   expiryDate: BigInt!
   transactionID: Bytes!
   logIndex: BigInt!
@@ -812,7 +807,7 @@ type ENSv2Registration @entity(immutable: false) {
 # `ENSv2ResolverAlias` stores resolver level alias rules.
 # These rules affect effective resolution, but they do not mutate the legacy `Resolver` row for the source node.
 type ENSv2ResolverAlias @entity(immutable: false) {
-  id: Bytes! # resolver + namehash of fromName (not the raw fromName bytes — audit finding 24)
+  id: Bytes! # resolver + namehash of fromName
   resolver: ENSv2Resolver!
   fromName: Bytes!
   toName: Bytes
@@ -853,9 +848,7 @@ type ENSv2ResolverData @entity(immutable: false) {
   # No `value` field: DataChanged's real signature only logs the data's
   # keccak256 hash as an indexed topic (indexedData), never the raw bytes —
   # no code path could ever populate one (see src/resolver.ts::handleDataChanged).
-  # A field that could provably
-  # never carry data was removed rather than kept permanently null; if a
-  # future ABI change ever does carry the raw value, add it back then.
+  # The raw value cannot be recovered from this event.
   blockNumber: BigInt!
   transactionID: Bytes!
   logIndex: BigInt!
@@ -973,7 +966,7 @@ type ENSv2ResolverTextIndex @entity(immutable: true) {
 # DataChanged entity above) — PermissionedResolver's DataUpdated event's
 # `value` param is non-indexed and fully recoverable, unlike the old
 # DataChanged's (indexed-only, unrecoverable, why ENSv2ResolverData has no
-# `value` field at all per GitHub #38). Genuinely different capability;
+# `value` field). Genuinely different capability;
 # distinct entity name so a schema reader doesn't conflate the two.
 type ENSv2ResolverRecordData @entity(immutable: false) {
   id: Bytes! # record + keyHash
@@ -1029,7 +1022,7 @@ type ENSv2PathNamespaceIndex @entity(immutable: true) {
 # Reverse of ENSv2PathNamespaceIndex above (path -> its namespaces) — this
 # is namespace -> the paths materialised under it, needed to deactivate all
 # of a namespace's paths in bounded time when the namespace itself is
-# deactivated (GitHub #47), the same way ENSv2SlotPathIndex already lets
+# deactivated, the same way ENSv2SlotPathIndex already lets
 # handleLabelUnregistered deactivate a slot's own paths.
 type ENSv2NamespacePathIndex @entity(immutable: true) {
   id: Bytes! # namespace + index
@@ -1039,8 +1032,7 @@ type ENSv2NamespacePathIndex @entity(immutable: true) {
 }
 
 # ---------------------------------------------------------------------------
-# Access & admin visibility (fix plan Phase 3). Current-state only, no
-# separate history entities (deliberate design decision, not an oversight).
+# Access and admin visibility. Current-state only, with no history entities.
 # ---------------------------------------------------------------------------
 
 type OperatorApproval @entity(immutable: false) {

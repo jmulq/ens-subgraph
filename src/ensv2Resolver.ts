@@ -46,8 +46,7 @@ import {
   TextUpdated,
 } from "./types/PermissionedResolver/PermissionedResolver";
 
-// Exported so ensv2Paths.ts::handleResolverUpdated can share this
-// implementation instead of maintaining its own copy (audit finding 23).
+// Shared with ensv2Paths.ts::handleResolverUpdated.
 export function getOrCreateResolver(address: Address): ENSv2Resolver {
   let id: Bytes = address;
   let resolver = ENSv2Resolver.load(id);
@@ -117,10 +116,8 @@ function projectRecordToActiveMemberships(
   }
 }
 
-// Also fires from the bare implementation contract's own constructor, not
-// just a proxy's initialize() — creates a harmless stray ENSv2Resolver row
-// for the implementation address itself, which never gets any records or
-// links attached.
+// Also fires from the implementation constructor, creating an otherwise
+// unused resolver row for the implementation address.
 export function handleResolverCreated(event: ResolverCreated): void {
   getOrCreateResolver(event.address);
 }

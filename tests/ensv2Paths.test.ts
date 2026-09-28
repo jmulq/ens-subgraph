@@ -51,7 +51,7 @@ function slotToken(n: i32): BigInt {
 }
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds composite ids as fixed-width Bytes
 // concatenation with no delimiter (a BigInt component is a 32-byte
 // big-endian value, src/utils.ts::uint256ToByteArray) — this mirrors that
@@ -584,10 +584,8 @@ test("late-link: pre-existing child registrations get zero new path rows and pat
     "1"
   );
 
-  // The single most important assertion in this plan: no new path row for
-  // the pre-existing "wallet" registration, and the index entity count is
-  // an unchanged upper bound, not just "the specific expected row is
-  // absent" (the original plan's explicit acceptance criterion for this test).
+  // A late link must not backfill a path for the pre-existing registration.
+  // The index count also proves that no unexpected path was appended.
   assert.fieldEquals("ENSv2NameSlot", walletSlotId, "pathCount", "0");
   assert.entityCount("ENSv2SlotPathIndex", 1);
 });
@@ -835,7 +833,7 @@ test("SubregistryUpdated(..., address(0)) clears the link and deactivates (not d
   assert.fieldEquals("ENSv2Namespace", namespaceEntityId, "active", "false");
 });
 
-test("deactivating a namespace also deactivates the paths materialised under it (GitHub #47)", () => {
+test("deactivating a namespace also deactivates the paths materialised under it", () => {
   dataSourceMock.setNetwork("sepolia");
 
   const CHILD_REGISTRY = "0x666666666666666666666666666666666666666f";
@@ -883,7 +881,7 @@ test("deactivating a namespace also deactivates the paths materialised under it 
   assert.fieldEquals("ENSv2NamePath", leafPathId, "active", "false");
 });
 
-test("deactivating a namespace deactivates EVERY path materialised under it, not just the first (GitHub #47)", () => {
+test("deactivating a namespace deactivates every materialised path, not just the first", () => {
   dataSourceMock.setNetwork("sepolia");
 
   const CHILD_REGISTRY = "0x777777777777777777777777777777777777778a";

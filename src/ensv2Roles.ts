@@ -27,7 +27,7 @@ export function processEACRolesChanged(
   // A registry-emitted EACRolesChanged is dispatched here TWICE for the
   // same physical log: once via the address-bound registry data source,
   // once via the addressless PermissionedResolver wildcard source, since
-  // both bind the byte-identical event signature (audit finding 11).
+  // both bind the byte-identical event signature.
   // historyId is a deterministic function of the log itself (block +
   // logIndex), so checking for it first is a free, exact way to detect and
   // skip the second dispatch — no address-based source-type check needed.
@@ -41,11 +41,8 @@ export function processEACRolesChanged(
   let contractId: Bytes = contract;
   let accountEntity = createOrLoadAccount(account);
 
-  // Fixed-width concatenation, no delimiter needed: contract/account are
-  // 20-byte addresses, resource is a 32-byte big-endian BigInt.
-  // accountEntity.id is String (Account.id, issue #8) — re-encoded back to
-  // the 20-byte address it represents so this id (itself still Bytes, an
-  // ENSv2-native entity) keeps the same encoding as before the revert.
+  // Fixed-width concatenation needs no delimiter. Account IDs are strings,
+  // so convert the account back to its 20-byte address representation.
   let id = Bytes.fromByteArray(
     concat(
       concat(contractId, uint256ToByteArray(resource)),
@@ -59,7 +56,7 @@ export function processEACRolesChanged(
     assignment.resource = resource;
     assignment.account = accountEntity.id;
   }
-  // ENSv2Resource is always registry-address-prefixed (Phase 3) — this
+  // ENSv2Resource is always registry-address-prefixed, so this
   // lookup naturally (and correctly) finds nothing for a resolver-sourced
   // event, no need to know or check which kind of contract this is.
   let resourceEntity = ENSv2Resource.load(resourceId(contractId, resource));

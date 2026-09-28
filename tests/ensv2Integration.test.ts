@@ -1,12 +1,5 @@
-// Phase 9 — cross-file integration scenarios. Every per-file tests/ensv2*
-// suite verifies its own mapping file in isolation; this file chains
-// handlers from several mapping files together in one matchstick store to
-// catch regressions that only show up when they interact. Scenarios from
-// the original plan that are already
-// covered elsewhere are not repeated here: resource behavior across
-// unregister/re-register (ensv2Registry.test.ts, Phase 3), ProxyDeployed
-// same-tx ordering (ensv2Roles.test.ts, Phase 8), and
-// SubregistryUpdated(..., address(0)) clearing (ensv2Paths.test.ts, Phase 4).
+// Cross-file integration scenarios chain handlers from several mappings in
+// one matchstick store. Mapping-local behavior remains in the focused suites.
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import {
   afterEach,
@@ -341,7 +334,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds composite ids as fixed-width Bytes
 // concatenation with no delimiter — this mirrors that exact encoding.
 function bigIntHex32(i: BigInt): string {
@@ -558,7 +551,7 @@ test("late-link + Domain projection combined: pre-existing child registration st
   assert.fieldEquals("Domain", freshPathId, "parent", basePathId);
 });
 
-test("Phase 6 migration correction survives unrelated cross-file activity in the same store", () => {
+test("migration correction survives unrelated cross-file activity in the same store", () => {
   dataSourceMock.setNetwork("sepolia");
 
   let ethBaseNamehash = setupEthNamespace(3);

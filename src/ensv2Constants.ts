@@ -1,14 +1,9 @@
 // Per-network ENSv2 constants that networks.json has no room for (it only
 // covers data-source address/startBlock). Branches on dataSource.network().
 //
-// Every function below fails loudly (log.critical) on an unrecognized
-// network instead of silently defaulting to a zero-value/empty sentinel
-// (audit finding 1). A silent default here doesn't just look wrong in
-// isolation — getEthRegistryAddress()/getRootRegistryAddress() feed
-// directly into entity-id construction (ensv2Registrar.ts) and registry
-// classification (ensv2Discovery.ts::kindForAddress), so a silent
-// Address.zero() collapses every entity id onto one bogus bucket rather
-// than failing the indexer where the misconfiguration actually is.
+// Unknown networks fail loudly because these values participate in entity-ID
+// construction and contract classification; zero-value fallbacks would
+// silently corrupt indexed state.
 import { Address, BigInt, dataSource, log } from "@graphprotocol/graph-ts";
 
 export function getMigrationControllers(): Address[] {
@@ -26,10 +21,7 @@ export function getMigrationControllers(): Address[] {
   return [];
 }
 
-// Manual loop with .equals() rather than Array<Address>.includes() — this
-// codebase has repeatedly hit real AssemblyScript compiler issues around
-// reference-type comparisons in unusual contexts, and .equals() is the
-// already-proven-safe pattern used throughout (see kindForAddress).
+// Use .equals() for graph-ts Address comparison.
 export function isMigrationController(sender: Address): boolean {
   let controllers = getMigrationControllers();
   for (let i = 0; i < controllers.length; i++) {
@@ -44,8 +36,7 @@ export function getV2GracePeriod(): BigInt {
   // GRACE_PERIOD is an ETHRegistrar *constructor argument*, not a compiled-in
   // protocol constant (contracts-v2/contracts/src/registrar/ETHRegistrar.sol)
   // — a different deployment can legitimately be constructed with a
-  // different value, so this must be network-branched like its siblings in
-  // this file, not returned unconditionally (audit finding 14).
+  // different value, so this must be configured per network.
   let network = dataSource.network();
   if (network == "sepolia") {
     // 28 days (2,419,200s) — contracts-v2/contracts/script/deploy-constants.ts
@@ -94,15 +85,8 @@ export function getEthRegistryAddress(): Address {
 // Implementation (not proxy) addresses behind VerifiableFactory.ProxyDeployed
 // — the signal kindForAddress uses to classify a template-discovered
 // registry as USER/WRAPPER, and to tell a resolver deployment apart from a
-// registry one (audit finding 4 / GitHub #33 / #36). Sourced from
-// contracts-v2/contracts/deployments/sepolia/{UserRegistryImpl,
-// WrapperRegistryImpl,PermissionedResolverImpl}.json on the post-audit-2
-// branch — the same checkout Phase 10 already confirmed matches this
-// deployment's RootRegistry/ETHRegistry addresses exactly, not a stale
-// mismatched instance. Left lowercase as sourced from the deployment JSON;
-// Address comparison is byte-level, so EIP-55 checksum casing has no
-// functional effect (same precedent as ETHRenewerV1's address in
-// getV2GracePeriod's comment above).
+// registry one. Values come from the matching Sepolia deployment artifacts.
+// Address comparison is byte-level, so checksum casing has no effect.
 export function getUserRegistryImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {
@@ -145,8 +129,7 @@ export function getPermissionedResolverImplAddress(): Address {
 // every HCA proxy fires the identical ProxyDeployed event a registry
 // deployment does. Without recognizing this implementation, kindForAddress
 // falls through to UNKNOWN and handleProxyDeployed wrongly creates an
-// ENSv2Registry row for it (same bug class as the resolver case, #33/#36 —
-// an HCA isn't a registry either).
+// ENSv2Registry row for it; an HCA is not a registry.
 export function getStandaloneHCAImplAddress(): Address {
   let network = dataSource.network();
   if (network == "sepolia") {

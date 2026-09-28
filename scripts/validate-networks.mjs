@@ -1,33 +1,15 @@
 #!/usr/bin/env node
-// Two independent drift-detection checks, both catching the same class of
-// bug: a hardcoded address silently going stale against its real source of
-// truth after a contract redeploy.
+// Detects address and start-block drift in two places:
 //
-// 1. subgraph.yaml vs networks.json — every data source's (network,
-//    address) pair in subgraph.yaml is consistent with networks.json. The
-//    gap that let a mainnet-labeled-but-Sepolia-addressed manifest ship
-//    unguarded (audit finding 1 / #27, finding 17).
-// 2. src/ensv2Constants.ts vs contracts-v2's own deployment artifacts —
-//    ensv2Constants.ts's hardcoded per-network Address.fromString(...)
-//    literals (RootRegistry/ETHRegistry/migration controllers/registry,
-//    resolver, and HCA implementation addresses) aren't data sources, so
-//    networks.json has no room for them and check 1 can't see them at all.
-//    This project has already had one real incident from exactly this gap:
-//    "Phase 10" existed specifically because these addresses changed under
-//    a contract redeploy and every hardcoded reference had to be found and
-//    updated by hand (audit finding 34 / #34). Cross-checks against
-//    contracts-v2/contracts/deployments/sepolia/*.json — the actual
-//    deployment records these addresses were originally sourced from —
-//    skipped gracefully (not a failure) if that submodule isn't checked
-//    out, since contracts-v2 is a third-party submodule that won't exist
-//    in a standalone `ens-subgraph` clone.
+// 1. subgraph.yaml vs networks.json for manifest data sources.
+// 2. src/ensv2Constants.ts vs the ENSv2 deployment artifacts for addresses
+//    that are used by mappings but are not manifest data sources.
 //
-// No YAML/JS-parser dependency for either check: subgraph.yaml's data
-// source blocks are flat `key: value` lines at a fixed indent, and
-// ensv2Constants.ts's address literals follow one consistent
-// `Address.fromString("0x...")` shape — plain line/regex scans are enough
-// for both, avoiding a new dependency in a package.json that currently has
-// none.
+// The deployment-artifact check is skipped when a sibling contracts-v2
+// checkout is unavailable, so this script also works in a standalone clone.
+//
+// Both files use stable shapes that can be checked without adding parser
+// dependencies.
 //
 // Usage: node scripts/validate-networks.mjs
 // Exits non-zero (and prints every problem, from both checks) if anything
@@ -40,7 +22,7 @@ import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
-const workspaceRoot = join(repoRoot, "..");
+const parentDir = join(repoRoot, "..");
 
 function parseDataSources(yamlText) {
   // Matches both the `dataSources:` and `templates:` sections — both use
@@ -184,10 +166,8 @@ function checkRequestedNetwork(requestedNetwork) {
   return problems;
 }
 
-// function name -> ordered list of contracts-v2/.../sepolia/*.json files
-// whose own "address" field is that function's real source of truth. Order
-// matters for getMigrationControllers, whose array literal in
-// ensv2Constants.ts is [Locked, Unlocked] in that exact order.
+// Function name -> ordered deployment files. Order matters for
+// getMigrationControllers, whose values are [Locked, Unlocked].
 const CONSTANTS_TO_DEPLOYMENT = {
   getRootRegistryAddress: ["RootRegistry.json"],
   getEthRegistryAddress: ["ETHRegistry.json"],
@@ -201,13 +181,7 @@ const CONSTANTS_TO_DEPLOYMENT = {
   ],
 };
 
-// Extracts every Address.fromString("0x...") literal that textually
-// appears within one exported function's body (from `export function
-// <name>` up to the next `export function`, or end of file). Each of
-// these functions has exactly one such literal per address it returns (the
-// only other return path is `Address.zero()`, never a second
-// Address.fromString call), so a plain regex scan over that slice is
-// unambiguous — no need to parse the "sepolia" branch out specifically.
+// Extract Address.fromString("0x...") literals from one exported function.
 function extractAddressLiterals(tsText, functionName) {
   const startMarker = `export function ${functionName}(`;
   const startIdx = tsText.indexOf(startMarker);
@@ -220,7 +194,7 @@ function extractAddressLiterals(tsText, functionName) {
 
 function checkEnsv2ConstantsVsContractsV2() {
   const deploymentsDir = join(
-    workspaceRoot,
+    parentDir,
     "contracts-v2",
     "contracts",
     "deployments",
@@ -307,7 +281,7 @@ function main() {
     console.error(`\nvalidate-networks: ${problems.length} problem(s) found:\n`);
     for (const p of problems) console.error(`  - ${p}`);
     console.error(
-      "\nSee ../docs/ensv2-sepolia-2026-09-15-review.md and ../docs/ensv2-implementation-plan.md for the deployment-safety decision."
+      "\nResolve the configuration errors above before building or deploying the subgraph."
     );
     process.exit(1);
   }
