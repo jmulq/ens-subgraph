@@ -16,7 +16,8 @@
     "docker:deploy-local": "graph deploy graphprotocol/ens --ipfs http://ens-app_ipfs_1:5001 --node http://ens-app_graph-node_1:8020/ --version-label 0.0.1",
     "docker:remove-local": "graph remove graphprotocol/ens --node http://ens-app_graph-node_1:8020",
     "build": "graph build",
-    "deploy:sepolia": "graph deploy ens-v-2-test --network sepolia --node https://api.studio.thegraph.com/deploy/",
+    "build:sepolia": "node scripts/run-network-command.mjs build sepolia",
+    "deploy:sepolia": "node scripts/run-network-command.mjs deploy sepolia",
     "deploy:holesky": "graph deploy ensholesky --network holesky --node https://api.studio.thegraph.com/deploy/",
     "watch-local": "graph deploy graphprotocol/ens --watch --debug --node http://127.0.0.1:8020/ --ipfs http://localhost:5001"
   },

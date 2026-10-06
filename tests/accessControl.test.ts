@@ -57,8 +57,7 @@ const NEW_OWNER = "0x4444444444444444444444444444444444444444";
 const CONTROLLER = "0x5555555555555555555555555555555555555555";
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (confirmed against this
-// schema's existing Bytes! fields, fix plan Phase 5). Production code now
+// form regardless of the underlying GraphQL type. Production code
 // builds these ids as fixed-width Bytes concatenation with no delimiter
 // (contract/owner/operator/controller are all 20-byte addresses) — the hex
 // form of that concatenation is just each address's own hex digits run

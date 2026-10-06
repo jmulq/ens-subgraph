@@ -9,48 +9,39 @@ import {
 import {
   handleABIUpdated,
   handleAddressUpdated,
-  handleAliasChanged,
   handleContenthashUpdated,
-  handleDataChanged,
   handleInterfaceUpdated,
   handleLinked,
   handleNameUpdated,
-  handleNamedAddrResource,
-  handleNamedDataResource,
-  handleNamedResource,
-  handleNamedTextResource,
   handleRecordDataUpdated,
+  handleResourceArgument,
   handleResolverCreated,
   handleTextUpdated,
-  namehashFromDnsEncoded,
 } from "../src/ensv2Resolver";
 import { createResolverID, handleAddrChanged } from "../src/resolver";
 import {
   ABIUpdated,
   AddressUpdated,
-  AliasChanged,
   ContenthashUpdated,
-  DataChanged,
   DataUpdated,
   InterfaceUpdated,
   Linked,
   NameUpdated,
-  NamedAddrResource,
-  NamedDataResource,
-  NamedResource,
-  NamedTextResource,
   ResolverCreated,
+  ResourceArgument,
   TextUpdated,
 } from "../src/types/PermissionedResolver/PermissionedResolver";
 import { AddrChanged } from "../src/types/Resolver/Resolver";
 import {
+  Account,
+  Domain,
   ENSv2Resolver,
-  ENSv2ResolverData,
   ENSv2ResolverRecord,
   Resolver,
 } from "../src/types/schema";
 
 const PERMISSIONED_RESOLVER = "0x11111111111111111111111111111111111111aa";
+const DOMAIN_OWNER = "0x22222222222222222222222222222222222222bb";
 
 // DNS-wire-format encode a single-label name, e.g. "alice" ->
 // 0x05616c696365 00 (length-prefixed label + zero-length root terminator).
@@ -65,216 +56,29 @@ function encodeLabel(label: string): Bytes {
   return Bytes.fromUint8Array(out);
 }
 
-const createAliasChangedEvent = (
-  fromName: Bytes,
-  toName: Bytes
-): AliasChanged => {
-  let mockEvent = newMockEvent();
-  let event = new AliasChanged(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam(
-      "indexedFromName",
-      ethereum.Value.fromBytes(Bytes.fromByteArray(crypto.keccak256(fromName)))
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam(
-      "indexedToName",
-      ethereum.Value.fromBytes(Bytes.fromByteArray(crypto.keccak256(toName)))
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("fromName", ethereum.Value.fromBytes(fromName))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("toName", ethereum.Value.fromBytes(toName))
-  );
-  return event;
-};
+function seedProjectedDomain(node: Bytes): string {
+  let owner = new Account(DOMAIN_OWNER);
+  owner.save();
 
-const createNamedResourceEvent = (
-  resource: BigInt,
-  name: Bytes
-): NamedResource => {
-  let mockEvent = newMockEvent();
-  let event = new NamedResource(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam(
-      "resource",
-      ethereum.Value.fromUnsignedBigInt(resource)
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
-  );
-  return event;
-};
+  let domain = new Domain(node.toHexString());
+  domain.subdomainCount = 0;
+  domain.isMigrated = true;
+  domain.createdAt = BigInt.zero();
+  domain.owner = owner.id;
 
-const createNamedTextResourceEvent = (
-  resource: BigInt,
-  name: Bytes,
-  keyHash: Bytes,
-  key: string
-): NamedTextResource => {
-  let mockEvent = newMockEvent();
-  let event = new NamedTextResource(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam(
-      "resource",
-      ethereum.Value.fromUnsignedBigInt(resource)
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("keyHash", ethereum.Value.fromFixedBytes(keyHash))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("key", ethereum.Value.fromString(key))
-  );
-  return event;
-};
+  let resolverAddress = Address.fromString(PERMISSIONED_RESOLVER);
+  let resolverId = createResolverID(node, resolverAddress);
+  let resolver = new Resolver(resolverId);
+  resolver.domain = domain.id;
+  resolver.address = resolverAddress;
+  resolver.save();
 
-const createNamedDataResourceEvent = (
-  resource: BigInt,
-  name: Bytes,
-  keyHash: Bytes,
-  key: string
-): NamedDataResource => {
-  let mockEvent = newMockEvent();
-  let event = new NamedDataResource(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam(
-      "resource",
-      ethereum.Value.fromUnsignedBigInt(resource)
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("keyHash", ethereum.Value.fromFixedBytes(keyHash))
-  );
-  event.parameters.push(
-    new ethereum.EventParam("key", ethereum.Value.fromString(key))
-  );
-  return event;
-};
+  domain.resolver = resolver.id;
+  domain.save();
+  return resolverId;
+}
 
-const createNamedAddrResourceEvent = (
-  resource: BigInt,
-  name: Bytes,
-  coinType: BigInt
-): NamedAddrResource => {
-  let mockEvent = newMockEvent();
-  let event = new NamedAddrResource(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam(
-      "resource",
-      ethereum.Value.fromUnsignedBigInt(resource)
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("name", ethereum.Value.fromBytes(name))
-  );
-  event.parameters.push(
-    new ethereum.EventParam(
-      "coinType",
-      ethereum.Value.fromUnsignedBigInt(coinType)
-    )
-  );
-  return event;
-};
-
-const createDataChangedEvent = (
-  node: Bytes,
-  key: string
-): DataChanged => {
-  let mockEvent = newMockEvent();
-  let event = new DataChanged(
-    Address.fromString(PERMISSIONED_RESOLVER),
-    mockEvent.logIndex,
-    mockEvent.transactionLogIndex,
-    mockEvent.logType,
-    mockEvent.block,
-    mockEvent.transaction,
-    mockEvent.parameters,
-    mockEvent.receipt
-  );
-  event.parameters = new Array();
-  event.parameters.push(
-    new ethereum.EventParam("node", ethereum.Value.fromFixedBytes(node))
-  );
-  event.parameters.push(
-    new ethereum.EventParam(
-      "indexedKey",
-      ethereum.Value.fromBytes(Bytes.fromUTF8(key))
-    )
-  );
-  event.parameters.push(
-    new ethereum.EventParam("key", ethereum.Value.fromString(key))
-  );
-  event.parameters.push(
-    new ethereum.EventParam(
-      "indexedData",
-      ethereum.Value.fromBytes(Bytes.fromUTF8("somevalue"))
-    )
-  );
-  return event;
-};
-
-// --- New (recordId-keyed) event model mock-event builders ---
+// --- RecordId-keyed event model mock-event builders ---
 
 const createResolverCreatedEvent = (): ResolverCreated => {
   let mockEvent = newMockEvent();
@@ -289,6 +93,34 @@ const createResolverCreatedEvent = (): ResolverCreated => {
     mockEvent.receipt
   );
   event.parameters = new Array();
+  return event;
+};
+
+const createResourceArgumentEvent = (
+  resource: BigInt,
+  arg: Bytes
+): ResourceArgument => {
+  let mockEvent = newMockEvent();
+  let event = new ResourceArgument(
+    Address.fromString(PERMISSIONED_RESOLVER),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam(
+      "resource",
+      ethereum.Value.fromUnsignedBigInt(resource)
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("arg", ethereum.Value.fromBytes(arg))
+  );
   return event;
 };
 
@@ -567,7 +399,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds these ids as fixed-width Bytes concatenation
 // with no delimiter (a BigInt component is a 32-byte big-endian value,
 // src/utils.ts::uint256ToByteArray) — these mirror that exact encoding, and
@@ -579,104 +411,6 @@ function bigIntHex32(i: BigInt): string {
 function hexOf(b: Bytes): string {
   return b.toHexString().slice(2);
 }
-
-test("AliasChanged set produces ENSv2ResolverAlias, clearing (empty toName) deactivates without deleting", () => {
-  let fromName = encodeLabel("alice");
-  let toName = encodeLabel("bob");
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-  let id = resolverId.concat(hexOf(namehashFromDnsEncoded(fromName)));
-
-  handleAliasChanged(createAliasChangedEvent(fromName, toName));
-
-  assert.fieldEquals("ENSv2ResolverAlias", id, "active", "true");
-  assert.fieldEquals("ENSv2ResolverAlias", id, "fromNameDecoded", "alice");
-  assert.fieldEquals("ENSv2ResolverAlias", id, "toNameDecoded", "bob");
-
-  handleAliasChanged(createAliasChangedEvent(fromName, Bytes.fromUint8Array(new Uint8Array(0))));
-
-  assert.fieldEquals("ENSv2ResolverAlias", id, "active", "false");
-  // Row still exists, not deleted.
-  assert.fieldEquals("ENSv2ResolverAlias", id, "fromNameDecoded", "alice");
-});
-
-test("NamedResource produces ENSv2ResolverResource with kind NAME", () => {
-  let resource = BigInt.fromI32(1);
-  let name = encodeLabel("carol");
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-  let id = resolverId.concat(bigIntHex32(resource)).concat(hexOf(Bytes.fromUTF8("NAME")));
-
-  handleNamedResource(createNamedResourceEvent(resource, name));
-
-  assert.fieldEquals("ENSv2ResolverResource", id, "kind", "NAME");
-  assert.fieldEquals("ENSv2ResolverResource", id, "nameDecoded", "carol");
-});
-
-test("NamedTextResource and NamedDataResource on the same resource with different keyHashes produce two distinct rows", () => {
-  let resource = BigInt.fromI32(2);
-  let name = encodeLabel("dave");
-  let textKeyHash = Bytes.fromI32(1);
-  let dataKeyHash = Bytes.fromI32(2);
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-  let textId = resolverId
-    .concat(bigIntHex32(resource))
-    .concat(hexOf(Bytes.fromUTF8("TEXT")))
-    .concat(hexOf(textKeyHash));
-  let dataId = resolverId
-    .concat(bigIntHex32(resource))
-    .concat(hexOf(Bytes.fromUTF8("DATA")))
-    .concat(hexOf(dataKeyHash));
-
-  handleNamedTextResource(
-    createNamedTextResourceEvent(resource, name, textKeyHash, "avatar")
-  );
-  handleNamedDataResource(
-    createNamedDataResourceEvent(resource, name, dataKeyHash, "pubkey")
-  );
-
-  assert.fieldEquals("ENSv2ResolverResource", textId, "kind", "TEXT");
-  assert.fieldEquals("ENSv2ResolverResource", textId, "key", "avatar");
-  assert.fieldEquals("ENSv2ResolverResource", dataId, "kind", "DATA");
-  assert.fieldEquals("ENSv2ResolverResource", dataId, "key", "pubkey");
-});
-
-test("NamedAddrResource for two coinTypes on the same resource produces two distinct rows", () => {
-  let resource = BigInt.fromI32(3);
-  let name = encodeLabel("erin");
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-  let ethCoinType = BigInt.fromI32(60);
-  let btcCoinType = BigInt.fromI32(0);
-  let ethId = resolverId
-    .concat(bigIntHex32(resource))
-    .concat(hexOf(Bytes.fromUTF8("ADDR")))
-    .concat(bigIntHex32(ethCoinType));
-  let btcId = resolverId
-    .concat(bigIntHex32(resource))
-    .concat(hexOf(Bytes.fromUTF8("ADDR")))
-    .concat(bigIntHex32(btcCoinType));
-
-  handleNamedAddrResource(
-    createNamedAddrResourceEvent(resource, name, ethCoinType)
-  );
-  handleNamedAddrResource(
-    createNamedAddrResourceEvent(resource, name, btcCoinType)
-  );
-
-  assert.fieldEquals("ENSv2ResolverResource", ethId, "coinType", "60");
-  assert.fieldEquals("ENSv2ResolverResource", btcId, "coinType", "0");
-});
-
-test("DataChanged produces ENSv2ResolverData with node/key set", () => {
-  let node = Bytes.fromI32(9);
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-  let keyHash = Bytes.fromByteArray(crypto.keccak256(Bytes.fromUTF8("mykey")));
-  let id = resolverId.concat(hexOf(node)).concat(hexOf(keyHash));
-
-  handleDataChanged(createDataChangedEvent(node, "mykey"));
-
-  assert.fieldEquals("ENSv2ResolverData", id, "key", "mykey");
-  let entity = ENSv2ResolverData.load(Bytes.fromHexString(id));
-  assert.assertTrue(entity != null);
-});
 
 test("a standard ENSIP event fired from a PermissionedResolver-style address is still processed by the existing addressless Resolver source", () => {
   let node = Bytes.fromHexString(
@@ -716,18 +450,7 @@ test("a standard ENSIP event fired from a PermissionedResolver-style address is 
   assert.assertNotNull(Resolver.load(resolverId));
 });
 
-test("none of this phase's handlers ever create a Domain row", () => {
-  let resource = BigInt.fromI32(4);
-  let name = encodeLabel("frank");
-  handleNamedResource(createNamedResourceEvent(resource, name));
-  handleAliasChanged(createAliasChangedEvent(encodeLabel("grace"), encodeLabel("henry")));
-  handleDataChanged(createDataChangedEvent(Bytes.fromI32(10), "somekey"));
-
-  // No Domain entity of any kind exists in the store after any of the above.
-  assert.entityCount("Domain", 0);
-});
-
-// --- New (recordId-keyed) event model (GitHub #43) ---
+// --- RecordId-keyed PermissionedResolver event model ---
 
 test("ResolverCreated creates only the ENSv2Resolver row, nothing else", () => {
   handleResolverCreated(createResolverCreatedEvent());
@@ -836,7 +559,7 @@ test("TextUpdated for two keys on the same recordId produces two distinct ENSv2R
   assert.fieldEquals("ENSv2ResolverText", urlId, "value", "https://example.com");
 });
 
-test("DataUpdated produces ENSv2ResolverRecordData with value populated -- the real capability gain over the old (unpopulatable) ENSv2ResolverData", () => {
+test("DataUpdated produces ENSv2ResolverRecordData with its recoverable value", () => {
   let recordId = BigInt.fromI32(8);
   let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
   let recordEntityId = resolverId.concat(bigIntHex32(recordId));
@@ -871,67 +594,6 @@ test("AddressUpdated on the same recordId+coinType twice overwrites the existing
   assert.entityCount("ENSv2ResolverRecord", 1);
 });
 
-test("old-model and new-model events on the same resolver address don't cross-contaminate the shared ENSv2Resolver row", () => {
-  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
-
-  // Old model: NamedResource.
-  let resource = BigInt.fromI32(11);
-  let oldName = encodeLabel("karl");
-  handleNamedResource(createNamedResourceEvent(resource, oldName));
-
-  // New model: Linked, same resolver address.
-  let recordId = BigInt.fromI32(12);
-  let node = Bytes.fromI32(102);
-  let newName = encodeLabel("liam");
-  handleLinked(createLinkedEvent(recordId, node, newName));
-
-  // Exactly one ENSv2Resolver row for this address, shared by both models --
-  // not two separate rows, and each model's own entities are intact.
-  assert.entityCount("ENSv2Resolver", 1);
-  assert.assertNotNull(ENSv2Resolver.load(Bytes.fromHexString(resolverId)));
-
-  let oldId = resolverId.concat(bigIntHex32(resource)).concat(hexOf(Bytes.fromUTF8("NAME")));
-  assert.fieldEquals("ENSv2ResolverResource", oldId, "kind", "NAME");
-
-  let linkId = resolverId.concat(hexOf(node));
-  let recordEntityId = resolverId.concat(bigIntHex32(recordId));
-  assert.fieldEquals("ENSv2ResolverLink", linkId, "record", recordEntityId);
-  assert.assertNotNull(ENSv2ResolverRecord.load(Bytes.fromHexString(recordEntityId)));
-});
-
-test("namehashFromDnsEncoded folds every label already parsed correctly when a LATER label (not the first) is truncated", () => {
-  // "sub" then "eth", each well-formed, followed by a proper root
-  // terminator -- this is what the malformed version below should still
-  // fold down to for its first two labels.
-  let subLabel = Bytes.fromUTF8("sub");
-  let ethLabel = Bytes.fromUTF8("eth");
-  let wellFormedOut = new Uint8Array(1 + subLabel.length + 1 + ethLabel.length + 1);
-  let o = 0;
-  wellFormedOut[o++] = subLabel.length as u8;
-  for (let i = 0; i < subLabel.length; i++) wellFormedOut[o++] = subLabel[i];
-  wellFormedOut[o++] = ethLabel.length as u8;
-  for (let i = 0; i < ethLabel.length; i++) wellFormedOut[o++] = ethLabel[i];
-  wellFormedOut[o++] = 0;
-  let expected = namehashFromDnsEncoded(Bytes.fromUint8Array(wellFormedOut));
-
-  // Same first two labels, but the THIRD length byte (10) claims far more
-  // content than the 2 bytes actually left in the buffer -- a different
-  // code path from the first-label-truncated case already covered above,
-  // since offset has already advanced past two successfully-parsed labels.
-  let malformedOut = new Uint8Array(1 + subLabel.length + 1 + ethLabel.length + 1 + 2);
-  o = 0;
-  malformedOut[o++] = subLabel.length as u8;
-  for (let i = 0; i < subLabel.length; i++) malformedOut[o++] = subLabel[i];
-  malformedOut[o++] = ethLabel.length as u8;
-  for (let i = 0; i < ethLabel.length; i++) malformedOut[o++] = ethLabel[i];
-  malformedOut[o++] = 10; // claims 10 more content bytes
-  malformedOut[o++] = 0x78; // 'x'
-  malformedOut[o++] = 0x79; // 'y' -- only 2 bytes actually follow, not 10
-
-  let node = namehashFromDnsEncoded(Bytes.fromUint8Array(malformedOut));
-  assert.bytesEquals(expected, node);
-});
-
 test("ABIUpdated and InterfaceUpdated produce their own child rows keyed by recordId", () => {
   let recordId = BigInt.fromI32(9);
   let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
@@ -959,50 +621,304 @@ test("ABIUpdated and InterfaceUpdated produce their own child rows keyed by reco
   );
 });
 
-// --- namehashFromDnsEncoded bounds guard (GitHub #60, V2-only fix) ---
+test("record membership indexes are append-once across repeated links and A to B to A relinks", () => {
+  let node = Bytes.fromI32(201);
+  let name = encodeLabel("membership");
+  let recordA = BigInt.fromI32(20);
+  let recordB = BigInt.fromI32(21);
+  let resolverId = Address.fromString(PERMISSIONED_RESOLVER).toHexString();
+  let recordAId = resolverId.concat(bigIntHex32(recordA));
+  let recordBId = resolverId.concat(bigIntHex32(recordB));
 
-test("namehashFromDnsEncoded on an empty buffer returns ROOT_NODE instead of crashing", () => {
-  let empty = Bytes.fromUint8Array(new Uint8Array(0));
-  let node = namehashFromDnsEncoded(empty);
-  assert.bytesEquals(
-    Bytes.fromHexString(
-      "0x0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    node
+  handleLinked(createLinkedEvent(recordA, node, name));
+  handleLinked(createLinkedEvent(recordA, node, name));
+  assert.fieldEquals("ENSv2ResolverRecord", recordAId, "linkIndexCount", "1");
+  assert.entityCount("ENSv2ResolverRecordLinkIndex", 1);
+
+  handleLinked(createLinkedEvent(recordB, node, name));
+  let membershipAId = recordAId.concat(hexOf(node));
+  let membershipBId = recordBId.concat(hexOf(node));
+  assert.fieldEquals(
+    "ENSv2ResolverRecordLinkMembership",
+    membershipAId,
+    "active",
+    "false"
+  );
+  assert.fieldEquals(
+    "ENSv2ResolverRecordLinkMembership",
+    membershipBId,
+    "active",
+    "true"
+  );
+
+  handleLinked(createLinkedEvent(recordA, node, name));
+  assert.fieldEquals("ENSv2ResolverRecord", recordAId, "linkIndexCount", "1");
+  assert.fieldEquals("ENSv2ResolverRecord", recordBId, "linkIndexCount", "1");
+  assert.entityCount("ENSv2ResolverRecordLinkIndex", 2);
+  assert.fieldEquals(
+    "ENSv2ResolverRecordLinkMembership",
+    membershipAId,
+    "active",
+    "true"
+  );
+  assert.fieldEquals(
+    "ENSv2ResolverRecordLinkMembership",
+    membershipBId,
+    "active",
+    "false"
   );
 });
 
-test("namehashFromDnsEncoded on a buffer with no trailing zero-length terminator still folds every real label", () => {
-  // "alice" with its length prefix but no root terminator byte -- a
-  // truncated encoding, distinct from the malformed-length case below.
-  let labelBytes = Bytes.fromUTF8("alice");
-  let out = new Uint8Array(labelBytes.length + 1);
-  out[0] = labelBytes.length as u8;
-  for (let i = 0; i < labelBytes.length; i++) {
-    out[i + 1] = labelBytes[i];
-  }
-  let noTerminator = Bytes.fromUint8Array(out);
+test("linking a populated record replaces the eligible legacy Resolver snapshot", () => {
+  let node = Bytes.fromI32(202);
+  let legacyId = seedProjectedDomain(node);
+  let recordId = BigInt.fromI32(22);
+  let ethAddress = Address.fromString(
+    "0x33333333333333333333333333333333333333cc"
+  );
+  let contenthash = Bytes.fromUTF8("ipfs://option-b");
+  let textKeyHash = Bytes.fromByteArray(
+    crypto.keccak256(Bytes.fromUTF8("avatar"))
+  );
 
-  let node = namehashFromDnsEncoded(noTerminator);
-  assert.bytesEquals(namehashFromDnsEncoded(encodeLabel("alice")), node);
+  handleAddressUpdated(
+    createAddressUpdatedEvent(recordId, BigInt.fromI32(60), ethAddress)
+  );
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(recordId, contenthash)
+  );
+  handleTextUpdated(
+    createTextUpdatedEvent(recordId, textKeyHash, "avatar", "ipfs://avatar")
+  );
+
+  let beforeLink = Resolver.load(legacyId)!;
+  assert.assertTrue(!beforeLink.addr);
+  assert.assertTrue(!beforeLink.contentHash);
+
+  handleLinked(createLinkedEvent(recordId, node, encodeLabel("snapshot")));
+
+  let legacy = Resolver.load(legacyId)!;
+  assert.stringEquals(ethAddress.toHexString(), legacy.addr!);
+  assert.bytesEquals(contenthash, legacy.contentHash!);
+  assert.i32Equals(1, legacy.coinTypes!.length);
+  assert.bigIntEquals(BigInt.fromI32(60), legacy.coinTypes![0]);
+  assert.i32Equals(1, legacy.texts!.length);
+  assert.stringEquals("avatar", legacy.texts![0]);
+  assert.fieldEquals(
+    "Domain",
+    node.toHexString(),
+    "resolvedAddress",
+    ethAddress.toHexString()
+  );
+  assert.entityCount("AddrChanged", 0);
+  assert.entityCount("ContenthashChanged", 0);
+  assert.entityCount("TextChanged", 0);
 });
 
-test("namehashFromDnsEncoded on a label length exceeding the remaining buffer stops early instead of reading out of bounds", () => {
-  // Claims a 10-byte label but only 3 content bytes actually follow.
-  let out = new Uint8Array(4);
-  out[0] = 10;
-  out[1] = 0x61; // 'a'
-  out[2] = 0x62; // 'b'
-  out[3] = 0x63; // 'c'
-  let malformed = Bytes.fromUint8Array(out);
+test("shared records fan out only to active explicitly linked names", () => {
+  let nodeA = Bytes.fromI32(203);
+  let nodeB = Bytes.fromI32(204);
+  let nodeC = Bytes.fromI32(205);
+  let legacyAId = seedProjectedDomain(nodeA);
+  let legacyBId = seedProjectedDomain(nodeB);
+  let legacyCId = seedProjectedDomain(nodeC);
+  let sharedRecord = BigInt.fromI32(23);
+  let otherRecord = BigInt.fromI32(24);
 
-  // Must not trap/crash -- and since the one (malformed) label never
-  // parses, folds down to ROOT_NODE, same as the empty-buffer case.
-  let node = namehashFromDnsEncoded(malformed);
-  assert.bytesEquals(
+  handleLinked(createLinkedEvent(sharedRecord, nodeA, encodeLabel("a")));
+  handleLinked(createLinkedEvent(sharedRecord, nodeB, encodeLabel("b")));
+  handleLinked(createLinkedEvent(otherRecord, nodeC, encodeLabel("c")));
+
+  let contenthash = Bytes.fromUTF8("shared-content");
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(sharedRecord, contenthash)
+  );
+
+  assert.bytesEquals(contenthash, Resolver.load(legacyAId)!.contentHash!);
+  assert.bytesEquals(contenthash, Resolver.load(legacyBId)!.contentHash!);
+  assert.assertTrue(!Resolver.load(legacyCId)!.contentHash);
+});
+
+test("relink snapshots replacement state, stale-record updates stop, and unlink clears without root fallback", () => {
+  let node = Bytes.fromI32(206);
+  let legacyId = seedProjectedDomain(node);
+  let recordA = BigInt.fromI32(25);
+  let recordB = BigInt.fromI32(26);
+  let ethAddress = Address.fromString(
+    "0x44444444444444444444444444444444444444dd"
+  );
+  let contentA = Bytes.fromUTF8("record-a");
+  let contentB = Bytes.fromUTF8("record-b");
+
+  handleAddressUpdated(
+    createAddressUpdatedEvent(recordA, BigInt.fromI32(60), ethAddress)
+  );
+  handleContenthashUpdated(createContenthashUpdatedEvent(recordA, contentA));
+  handleContenthashUpdated(createContenthashUpdatedEvent(recordB, contentB));
+  handleLinked(createLinkedEvent(recordA, node, encodeLabel("relink")));
+  assert.stringEquals(ethAddress.toHexString(), Resolver.load(legacyId)!.addr!);
+
+  handleLinked(createLinkedEvent(recordB, node, encodeLabel("relink")));
+  let afterRelink = Resolver.load(legacyId)!;
+  assert.bytesEquals(contentB, afterRelink.contentHash!);
+  assert.assertTrue(!afterRelink.addr);
+  assert.assertTrue(!afterRelink.coinTypes);
+
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(recordA, Bytes.fromUTF8("stale-a"))
+  );
+  assert.bytesEquals(contentB, Resolver.load(legacyId)!.contentHash!);
+
+  handleLinked(createLinkedEvent(BigInt.zero(), node, encodeLabel("relink")));
+  let afterUnlink = Resolver.load(legacyId)!;
+  assert.assertTrue(!afterUnlink.addr);
+  assert.assertTrue(!afterUnlink.contentHash);
+  assert.assertTrue(!afterUnlink.texts);
+  assert.assertTrue(!afterUnlink.coinTypes);
+  assert.assertTrue(!Domain.load(node.toHexString())!.resolvedAddress);
+});
+
+test("empty contenthash replaces the projected value with the legacy empty-bytes clearing representation", () => {
+  let node = Bytes.fromI32(210);
+  let legacyId = seedProjectedDomain(node);
+  let recordId = BigInt.fromI32(30);
+  let initial = Bytes.fromUTF8("ipfs://before-clear");
+  let empty = Bytes.fromUint8Array(new Uint8Array(0));
+
+  handleLinked(createLinkedEvent(recordId, node, encodeLabel("contentclear")));
+  handleContenthashUpdated(createContenthashUpdatedEvent(recordId, initial));
+  assert.bytesEquals(initial, Resolver.load(legacyId)!.contentHash!);
+
+  handleContenthashUpdated(createContenthashUpdatedEvent(recordId, empty));
+
+  let projected = Resolver.load(legacyId)!;
+  assert.i32Equals(0, projected.contentHash!.length);
+  let nativeRecord = ENSv2ResolverRecord.load(
     Bytes.fromHexString(
-      "0x0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    node
+      Address.fromString(PERMISSIONED_RESOLVER)
+        .toHexString()
+        .concat(bigIntHex32(recordId))
+    )
+  )!;
+  assert.i32Equals(0, nativeRecord.contenthash!.length);
+});
+
+test("empty or malformed ETH bytes clear address state while non-ETH updates only extend observed coin types", () => {
+  let node = Bytes.fromI32(207);
+  let legacyId = seedProjectedDomain(node);
+  let recordId = BigInt.fromI32(27);
+  let ethAddress = Address.fromString(
+    "0x55555555555555555555555555555555555555ee"
+  );
+  handleLinked(createLinkedEvent(recordId, node, encodeLabel("coins")));
+  handleAddressUpdated(
+    createAddressUpdatedEvent(recordId, BigInt.fromI32(60), ethAddress)
+  );
+
+  let withCoins = Resolver.load(legacyId)!;
+  assert.stringEquals(ethAddress.toHexString(), withCoins.addr!);
+  assert.i32Equals(1, withCoins.coinTypes!.length);
+
+  // A non-empty value with the wrong byte length is not a valid EVM
+  // address. It remains available in the native record but must clear the
+  // legacy address projection rather than fabricating an Account id.
+  handleAddressUpdated(
+    createAddressUpdatedEvent(
+      recordId,
+      BigInt.fromI32(60),
+      Bytes.fromUint8Array(new Uint8Array(19))
+    )
+  );
+  let malformed = Resolver.load(legacyId)!;
+  assert.assertTrue(!malformed.addr);
+  assert.assertTrue(!Domain.load(node.toHexString())!.resolvedAddress);
+  assert.i32Equals(1, malformed.coinTypes!.length);
+
+  handleAddressUpdated(
+    createAddressUpdatedEvent(recordId, BigInt.fromI32(60), ethAddress)
+  );
+  handleAddressUpdated(
+    createAddressUpdatedEvent(recordId, BigInt.fromI32(0), Bytes.fromI32(7))
+  );
+  assert.i32Equals(2, Resolver.load(legacyId)!.coinTypes!.length);
+
+  handleAddressUpdated(
+    createAddressUpdatedEvent(
+      recordId,
+      BigInt.fromI32(60),
+      Bytes.fromUint8Array(new Uint8Array(0))
+    )
+  );
+  let cleared = Resolver.load(legacyId)!;
+  assert.assertTrue(!cleared.addr);
+  assert.i32Equals(2, cleared.coinTypes!.length);
+  assert.fieldEquals(
+    "ENSv2ResolverRecord",
+    Address.fromString(PERMISSIONED_RESOLVER)
+      .toHexString()
+      .concat(bigIntHex32(recordId)),
+    "addressIndexCount",
+    "2"
+  );
+});
+
+test("resolver events remain native-only when no Domain projection exists", () => {
+  let node = Bytes.fromI32(208);
+  let recordId = BigInt.fromI32(28);
+  handleLinked(createLinkedEvent(recordId, node, encodeLabel("nativeonly")));
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(recordId, Bytes.fromUTF8("native"))
+  );
+
+  assert.entityCount("Domain", 0);
+  assert.entityCount("Resolver", 0);
+  assert.entityCount("ENSv2ResolverRecord", 1);
+  assert.entityCount("ENSv2ResolverRecordLinkMembership", 1);
+});
+
+test("a record update reaches its explicit root link but not unlinked fallback consumers", () => {
+  let rootNode = Bytes.fromHexString(
+    "0x0000000000000000000000000000000000000000000000000000000000000000"
+  );
+  let fallbackNode = Bytes.fromI32(209);
+  let rootLegacyId = seedProjectedDomain(rootNode);
+  let fallbackLegacyId = seedProjectedDomain(fallbackNode);
+  let defaultRecord = BigInt.fromI32(29);
+  handleLinked(
+    createLinkedEvent(defaultRecord, rootNode, Bytes.fromHexString("0x00"))
+  );
+
+  let contenthash = Bytes.fromUTF8("root-default");
+  handleContenthashUpdated(
+    createContenthashUpdatedEvent(defaultRecord, contenthash)
+  );
+
+  assert.bytesEquals(contenthash, Resolver.load(rootLegacyId)!.contentHash!);
+  assert.assertTrue(!Resolver.load(fallbackLegacyId)!.contentHash);
+});
+
+test("ResourceArgument stores resolver-scoped role metadata and repeated emissions update in place", () => {
+  let resource = BigInt.fromI32(300);
+  let firstArg = Bytes.fromUTF8("avatar");
+  let secondArg = Bytes.fromUTF8("url");
+  let id = Address.fromString(PERMISSIONED_RESOLVER)
+    .toHexString()
+    .concat(bigIntHex32(resource));
+
+  handleResourceArgument(createResourceArgumentEvent(resource, firstArg));
+  assert.fieldEquals(
+    "ENSv2ResolverResourceArgument",
+    id,
+    "arg",
+    firstArg.toHexString()
+  );
+
+  handleResourceArgument(createResourceArgumentEvent(resource, secondArg));
+  assert.entityCount("ENSv2ResolverResourceArgument", 1);
+  assert.fieldEquals(
+    "ENSv2ResolverResourceArgument",
+    id,
+    "arg",
+    secondArg.toHexString()
   );
 });

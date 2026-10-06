@@ -13,8 +13,8 @@
 //   registered simply isn't in that loop yet, so no path gets materialised
 //   for it.
 //
-// Get either loop direction backwards and the proposal's core safety
-// property (no unbounded recursive backfill) breaks.
+// Both directions must remain bounded; this mapping never performs recursive
+// backfills.
 import { Address, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 
 import { checkValidLabel, createEventID } from "./utils";
@@ -33,6 +33,10 @@ import {
 } from "./ensv2Utils";
 import { getOrCreateRegistry } from "./ensv2Discovery";
 import { getOrCreateResolver } from "./ensv2Resolver";
+import {
+  attachDomainResolver,
+  clearDomainResolver,
+} from "./ensv2ResolverProjection";
 import { projectPathToDomain } from "./ensv2Domain";
 import {
   ENSv2NamePath,
@@ -67,6 +71,25 @@ function appendSlotPathIndex(slot: ENSv2NameSlot, path: ENSv2NamePath): void {
   slot.save();
 }
 
+// A registration silently resets its slot resolver even when no
+// ResolverUpdated(..., address(0)) event is emitted. Clear every previously
+// materialised compatibility Domain before any later same-transaction event
+// can attach a new resolver.
+export function clearProjectedDomainResolversForSlot(
+  slot: ENSv2NameSlot,
+): void {
+  for (let i = 0; i < slot.pathCount; i++) {
+    let pathIndex = ENSv2SlotPathIndex.load(slotPathIndexId(slot.id, i));
+    if (pathIndex == null) {
+      continue;
+    }
+    let path = ENSv2NamePath.load(pathIndex.path);
+    if (path != null) {
+      clearDomainResolver(path.namehash);
+    }
+  }
+}
+
 function appendPathNamespaceIndex(
   path: ENSv2NamePath,
   namespace: ENSv2Namespace
@@ -85,7 +108,7 @@ function appendPathNamespaceIndex(
 
 // Reverse of appendPathNamespaceIndex above — lets deactivatePathsForNamespace
 // below find every path materialised under a namespace in bounded time when
-// that namespace is deactivated (GitHub #47), the same way ENSv2SlotPathIndex
+// that namespace is deactivated, the same way ENSv2SlotPathIndex
 // already lets handleLabelUnregistered (ensv2Registry.ts) deactivate a
 // slot's own paths. Called once, at path creation, alongside
 // appendSlotPathIndex — a path's (namespace, slot) pair is fixed for its
@@ -153,11 +176,8 @@ function upsertNamespaceLink(
   previousChildAddress: Bytes | null,
   event: SubregistryUpdated
 ): void {
-  // A slot can only point at one subregistry at a time — deactivate the
-  // superseded link first. Nullable-Bytes comparison, not `!==`/`==`
-  // (AssemblyScript compiler gotcha, fix plan Phase 5): truthy-guard, then .equals(); an
-  // empty Bytes() replaces the old "" sentinel (fix plan Phase 5 Decision
-  // 5) — a real address is never zero-length, so the semantics are the same.
+  // A slot can only point at one subregistry at a time. Deactivate the
+  // superseded link and narrow nullable Bytes before calling .equals().
   if (previousChildAddress) {
     let newChildAddress: Bytes = isZeroAddress(event.params.subregistry)
       ? Bytes.empty()
@@ -193,9 +213,7 @@ function upsertNamespaceLink(
     link.childRegistry = childAddress;
   }
   link.parentTokenId = event.params.tokenId;
-  // Was never assigned anywhere (audit finding 16) — the sibling
-  // ENSv2Namespace.parentResource is populated the same way one function
-  // over (createOrReactivateNamespace), using data already in scope here.
+  // Keep the link's parent resource aligned with its namespace metadata.
   let parentResourceId = parentSlot.currentResource;
   if (parentResourceId) {
     let resourceEntity = ENSv2Resource.load(parentResourceId!);
@@ -240,7 +258,7 @@ function deactivateNamespacesFromParentSlot(
   }
 }
 
-// GitHub #47: paths materialised under a namespace (one per slot ever
+// Paths materialised under a namespace (one per slot ever
 // registered in the namespace's registry while it was active — see
 // materializePathsForSlot) stayed active:true forever even after their
 // owning namespace was deactivated above. Bounded by namespace.pathCount
@@ -320,7 +338,7 @@ export function handleSubregistryUpdated(event: SubregistryUpdated): void {
   // to pass through zero first, so this is reachable, not hypothetical.
   // Without this, namespaces from the superseded registry A stay
   // active:true forever and can resurface if A later gets its own
-  // registrations (audit finding 6).
+  // registrations.
   if (previousChildAddress && !previousChildAddress!.equals(event.params.subregistry)) {
     deactivateNamespacesFromParentSlot(parentSlot, previousChildAddress!, event.block);
   }
@@ -467,14 +485,37 @@ export function handleResolverUpdated(event: ResolverUpdated): void {
     slot.resolver = null;
   } else {
     slot.resolverAddress = event.params.resolver;
-    // Shared with ensv2Resolver.ts's own get-or-create instead of
-    // maintaining a second copy here (audit finding 23).
+    // Share resolver creation with the resolver event mapping.
     let resolverEntity = getOrCreateResolver(event.params.resolver);
     slot.resolver = resolverEntity.id;
   }
   slot.updatedAt = event.block.timestamp;
   slot.updatedAtBlock = event.block.number;
   slot.save();
+
+  // Keep the existing compatibility projection synchronized with the native
+  // slot. The bounded path index deliberately excludes late-linked names.
+  for (let i = 0; i < slot.pathCount; i++) {
+    let pathIndex = ENSv2SlotPathIndex.load(slotPathIndexId(slot.id, i));
+    if (pathIndex == null) {
+      continue;
+    }
+    let path = ENSv2NamePath.load(pathIndex.path);
+    if (path == null) {
+      continue;
+    }
+    if (!path.active) {
+      continue;
+    }
+    if (path.domain == null) {
+      continue;
+    }
+    if (isZeroAddress(event.params.resolver)) {
+      clearDomainResolver(path.namehash);
+    } else {
+      attachDomainResolver(event.params.resolver, path.namehash);
+    }
+  }
 
   let history = new ENSv2ResolverUpdate(createEventID(event));
   history.slot = slot.id;
@@ -488,20 +529,14 @@ export function handleResolverUpdated(event: ResolverUpdated): void {
   history.save();
 }
 
-// Enrichment only — must never gate other logic (dynamically-linked
-// registries can legitimately return getParent() = (0x0, "")). No history
-// entity (not in the proposal's history-entity list, same precedent as
-// LabelReserved in Phase 2).
+// Enrichment only: dynamically linked registries may legitimately return
+// getParent() = (0x0, ""). This handler stores current state only.
 export function handleParentUpdated(event: ParentUpdated): void {
   let registryId = event.address;
   let registry = ENSv2Registry.load(registryId);
   if (registry == null) {
-    // Unreachable through the current call graph: this function's only
-    // caller (ensv2Registry.ts's wrapper) always calls bootstrapRegistry()
-    // first, which unconditionally creates this exact row. Kept as a guard
-    // rather than an assertion in case that invariant is ever broken by a
-    // future refactor (audit finding 25) — if this ever actually logs,
-    // that invariant has broken and needs investigating.
+    // The wrapper normally bootstraps this row first. Keep a guard so
+    // unexpected event order does not terminate indexing.
     log.warning("ParentUpdated for unknown registry {}", [
       registryId.toHexString(),
     ]);
@@ -510,11 +545,7 @@ export function handleParentUpdated(event: ParentUpdated): void {
 
   if (isZeroAddress(event.params.parent)) {
     registry.canonicalParentRegistry = null;
-    // Cleared explicitly, not via checkValidLabel("") below — an empty
-    // string trivially passes that check, so relying on it here would
-    // leave canonicalParentLabel as "" while canonicalParentRegistry is
-    // null, two different answers to "does this have a parent" for the
-    // same event (audit finding 20).
+    // Keep the registry and label fields consistent when the parent is clear.
     registry.canonicalParentLabel = null;
   } else {
     let parentRegistry = getOrCreateRegistry(
@@ -526,12 +557,8 @@ export function handleParentUpdated(event: ParentUpdated): void {
     if (checkValidLabel(event.params.label)) {
       registry.canonicalParentLabel = event.params.label;
     } else {
-      // A malformed new label must not leave the OLD parent's label sitting
-      // next to the NEW parent's registry — that mismatch is exactly what
-      // audit finding 20 flagged. Clearing to null (rather than echoing the
-      // still-untrusted raw string back out, which could itself carry the
-      // same unsafe characters checkValidLabel exists to catch) is the safe
-      // choice here.
+      // Do not retain the previous parent's label beside a new parent or
+      // persist an invalid replacement label.
       registry.canonicalParentLabel = null;
     }
   }

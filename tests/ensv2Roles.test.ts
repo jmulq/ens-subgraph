@@ -9,9 +9,15 @@ import {
 } from "matchstick-as/assembly/index";
 import { handleEACRolesChanged } from "../src/ensv2Registry";
 import { handleProxyDeployed } from "../src/ensv2Discovery";
-import { handleEACRolesChanged as handleResolverEACRolesChanged } from "../src/ensv2Resolver";
+import {
+  handleEACRolesChanged as handleResolverEACRolesChanged,
+  handleResourceArgument,
+} from "../src/ensv2Resolver";
 import { EACRolesChanged } from "../src/types/RootRegistry/PermissionedRegistry";
-import { EACRolesChanged as ResolverEACRolesChanged } from "../src/types/PermissionedResolver/PermissionedResolver";
+import {
+  EACRolesChanged as ResolverEACRolesChanged,
+  ResourceArgument,
+} from "../src/types/PermissionedResolver/PermissionedResolver";
 import { ProxyDeployed } from "../src/types/VerifiableFactory/VerifiableFactory";
 import { ENSv2Registry, ENSv2RoleAssignment } from "../src/types/schema";
 
@@ -89,6 +95,34 @@ const createResolverEACRolesChangedEvent = (
   return event;
 };
 
+const createResourceArgumentEvent = (
+  resource: BigInt,
+  arg: Bytes
+): ResourceArgument => {
+  let mockEvent = newMockEvent();
+  let event = new ResourceArgument(
+    Address.fromString(RESOLVER_ADDRESS),
+    mockEvent.logIndex,
+    mockEvent.transactionLogIndex,
+    mockEvent.logType,
+    mockEvent.block,
+    mockEvent.transaction,
+    mockEvent.parameters,
+    mockEvent.receipt
+  );
+  event.parameters = new Array();
+  event.parameters.push(
+    new ethereum.EventParam(
+      "resource",
+      ethereum.Value.fromUnsignedBigInt(resource)
+    )
+  );
+  event.parameters.push(
+    new ethereum.EventParam("arg", ethereum.Value.fromBytes(arg))
+  );
+  return event;
+};
+
 const createProxyDeployedEvent = (proxyAddress: string): ProxyDeployed => {
   let mockEvent = newMockEvent();
   let event = new ProxyDeployed(
@@ -114,8 +148,7 @@ const createProxyDeployedEvent = (proxyAddress: string): ProxyDeployed => {
   // "salt" (the real ABI's 3rd param, between proxyAddress and
   // implementation) was previously missing here, so event.params.implementation
   // (generated as a fixed-index accessor, not looked up by name) read past
-  // the end of a 3-element array — latent until audit finding 4 made
-  // handleProxyDeployed the first code to actually read it.
+  // the end of a 3-element array once handleProxyDeployed reads it.
   event.parameters.push(
     new ethereum.EventParam(
       "salt",
@@ -137,7 +170,7 @@ afterEach(() => {
 });
 
 // assert.fieldEquals compares an entity's id as its lowercase-hex string
-// form regardless of the underlying GraphQL type (fix plan Phase 5).
+// form regardless of the underlying GraphQL type.
 // Production code now builds these ids as fixed-width Bytes concatenation
 // with no delimiter: addresses are 20 bytes, a BigInt component is a
 // 32-byte big-endian value (src/utils.ts::uint256ToByteArray) — this mirrors
@@ -240,6 +273,62 @@ test("a resolver-side role event also indexes with resourceEntity null, proving 
     assert.assertTrue(!resourceEntityId);
   }
   assert.fieldEquals("ENSv2RoleAssignment", assignmentId, "roleBitmap", "1");
+});
+
+test("ResourceArgument immediately preceding a resolver role event enriches the assignment", () => {
+  dataSourceMock.setNetwork("sepolia");
+  let resource = BigInt.fromI32(30);
+  let assignmentId = Address.fromString(RESOLVER_ADDRESS)
+    .toHexString()
+    .concat(bigIntHex32(resource))
+    .concat(Address.fromString(ACCOUNT).toHexString().slice(2));
+  let argumentId = Address.fromString(RESOLVER_ADDRESS)
+    .toHexString()
+    .concat(bigIntHex32(resource));
+
+  handleResourceArgument(
+    createResourceArgumentEvent(resource, Bytes.fromUTF8("avatar"))
+  );
+  handleResolverEACRolesChanged(
+    createResolverEACRolesChangedEvent(
+      RESOLVER_ADDRESS,
+      resource,
+      ACCOUNT,
+      BigInt.zero(),
+      BigInt.fromI32(1)
+    )
+  );
+
+  assert.fieldEquals(
+    "ENSv2RoleAssignment",
+    assignmentId,
+    "resourceArgument",
+    argumentId
+  );
+});
+
+test("root resolver roles legitimately have no ResourceArgument relation", () => {
+  dataSourceMock.setNetwork("sepolia");
+  let resource = BigInt.zero();
+  let assignmentId = Address.fromString(RESOLVER_ADDRESS)
+    .toHexString()
+    .concat(bigIntHex32(resource))
+    .concat(Address.fromString(ACCOUNT).toHexString().slice(2));
+
+  handleResolverEACRolesChanged(
+    createResolverEACRolesChangedEvent(
+      RESOLVER_ADDRESS,
+      resource,
+      ACCOUNT,
+      BigInt.zero(),
+      BigInt.fromI32(1)
+    )
+  );
+  let assignment = ENSv2RoleAssignment.load(Bytes.fromHexString(assignmentId));
+  assert.assertNotNull(assignment);
+  if (assignment != null) {
+    assert.assertTrue(!assignment.resourceArgument);
+  }
 });
 
 test("role-event-then-ProxyDeployed and ProxyDeployed-then-role-event produce identical final registry/assignment state", () => {

@@ -11,16 +11,43 @@
 // other event, so it doesn't matter which arrives first — "correlate by
 // transaction hash plus token ID, do not rely on log order."
 import { log } from "@graphprotocol/graph-ts";
-import { checkValidLabel, createOrLoadAccount } from "./utils";
+import { checkValidLabel, createOrLoadAccount, ETH_NODE } from "./utils";
 import { getEthRegistryAddress } from "./ensv2Constants";
-import { nameSlotId, toSlotId } from "./ensv2Utils";
-import { ENSv2Registration } from "./types/schema";
+import { nameSlotId, pathNamehash, toSlotId } from "./ensv2Utils";
+import {
+  ENSv2NamePath,
+  ENSv2NameSlot,
+  ENSv2Registration,
+} from "./types/schema";
 import {
   NameRegistered,
   NameRenewed,
   OwnershipTransferred,
 } from "./types/ETHRegistrar/ETHRegistrar";
 import { processOwnershipTransferred } from "./accessControl";
+
+export function syncRegistrationFromSlot(slot: ENSv2NameSlot): void {
+  if (!slot.registry.equals(getEthRegistryAddress())) {
+    return;
+  }
+  let registration = ENSv2Registration.load(slot.id);
+  if (registration == null) {
+    return;
+  }
+  let expiryDate = slot.expiryDate;
+  if (expiryDate) {
+    registration.expiryDate = expiryDate!;
+  }
+  let resource = slot.currentResource;
+  if (resource) {
+    registration.resource = resource!;
+  }
+  let path = ENSv2NamePath.load(pathNamehash(ETH_NODE, slot.labelhash));
+  if (path != null) {
+    registration.path = path.id;
+  }
+  registration.save();
+}
 
 export function handleNameRegistered(event: NameRegistered): void {
   let registryId = getEthRegistryAddress();
@@ -31,11 +58,18 @@ export function handleNameRegistered(event: NameRegistered): void {
   if (registration == null) {
     registration = new ENSv2Registration(id);
     registration.slot = id;
-    registration.registrationDate = event.block.timestamp;
-    // NameRegistered carries only `duration`, not an absolute expiry — derive
-    // it once at creation; handleNameRenewed below refreshes it directly
-    // from NameRenewed's own newExpiry on every subsequent renewal. Never
-    // populated before this fix (audit finding 5).
+  }
+
+  // This row is slot-keyed and therefore reused across incarnations. Every
+  // NameRegistered begins a new incarnation, so registrationDate and all
+  // purchase metadata must be replaced even when the entity already exists.
+  registration.registrationDate = event.block.timestamp;
+  let slot = ENSv2NameSlot.load(id);
+  if (slot != null && slot.expiryDate) {
+    registration.expiryDate = slot.expiryDate!;
+  } else {
+    // The registry event later reconciles this fallback to the canonical
+    // absolute expiry through syncRegistrationFromSlot.
     registration.expiryDate = event.block.timestamp.plus(event.params.duration);
   }
 
@@ -51,6 +85,9 @@ export function handleNameRegistered(event: NameRegistered): void {
   registration.transactionID = event.transaction.hash;
   registration.logIndex = event.logIndex;
   registration.save();
+  if (slot != null) {
+    syncRegistrationFromSlot(slot);
+  }
 }
 
 export function handleNameRenewed(event: NameRenewed): void {
@@ -70,9 +107,7 @@ export function handleNameRenewed(event: NameRenewed): void {
   registration.duration = event.params.duration;
   registration.paymentToken = event.params.paymentToken;
   registration.referrer = event.params.referrer;
-  // The contract's own already-resolved absolute expiry (not a delta) —
-  // was sitting right here unread alongside the three siblings above
-  // (audit finding 5).
+  // newExpiry is the contract's absolute expiry, not a duration delta.
   registration.expiryDate = event.params.newExpiry;
   registration.save();
 }

@@ -1,6 +1,5 @@
-// Registry discovery via VerifiableFactory.ProxyDeployed, plus the shared
-// getOrCreateRegistry/getOrCreateRootNamespace helpers used by
-// ensv2Registry.ts's bootstrap step (and by Phase 4's ensv2Paths.ts later).
+// Registry discovery via VerifiableFactory.ProxyDeployed and shared registry
+// and root-namespace creation helpers.
 import { Address, Bytes, ethereum } from "@graphprotocol/graph-ts";
 
 import { ROOT_NODE } from "./utils";
@@ -33,7 +32,7 @@ import { ENSv2Registry as ENSv2RegistryTemplate } from "./types/templates";
 // reference its address (the address can't be referenced on-chain before
 // the proxy exists), so by the time any other call site runs, the row
 // already exists with its real classification and this function never
-// actually reruns for it (audit finding 4 / GitHub #33 / #36).
+// actually reruns for it.
 export function kindForAddress(
   address: Address,
   implementation: Bytes | null = null
@@ -86,10 +85,7 @@ export function getOrCreateRootNamespace(
   if (namespace == null) {
     namespace = new ENSv2Namespace(id);
     namespace.registry = rootRegistryId;
-    // Root has no name. Left unset (not assigned "") deliberately: the
-    // generated nullable-String setter treats "" as falsy and unsets the
-    // field regardless, so it would end up null either way — this documents
-    // that rather than relying on the fall-through.
+    // Root has no name; leave the nullable field unset.
     namespace.baseNamehash = rootNamehash;
     namespace.active = true;
     namespace.pathCount = 0;
@@ -98,40 +94,26 @@ export function getOrCreateRootNamespace(
     namespace.updatedAtBlock = block.number;
     namespace.save();
 
-    // Must append the index entity too, not just bump the counter — Phase
-    // 4's materializePathsForSlot enumerates namespaces strictly via
+    // materializePathsForSlot enumerates namespaces strictly via
     // ENSv2RegistryNamespaceIndex (bounded by namespaceCount), so a counter
-    // increment with no matching index row would make this namespace
-    // invisible to that loop despite namespaceCount claiming it exists.
-    // Shared with ensv2Paths.ts's equivalent append (audit finding 23) —
-    // see ensv2Utils.ts::appendRegistryNamespaceIndex for why it lives there.
+    // increment must always have a matching index row.
     let registry = ENSv2Registry.load(rootRegistryId)!;
     appendRegistryNamespaceIndex(registry, namespace);
   }
   return namespace;
 }
 
-// VerifiableFactory.deployProxy() is used for registry, resolver, and HCA
-// proxies alike (per the ENSv2 Subgraph Upgrade Proposal's "Discovery"
-// section, plus StandaloneHCAFactory sharing this same VerifiableFactory
-// instance rather than deploying its own — GitHub #72 follow-up). Resolver
-// events are handled entirely via the addressless PermissionedResolver data
-// source, so resolvers need no discovery step — and now that the
-// implementation address is known (GitHub #34), a resolver deployment can
-// be told apart from a registry one directly: skip templating/registry-row
-// creation entirely for it, rather than creating a harmless-but-wrong
-// ENSv2Registry row the way this function used to (GitHub #33 / #36 /
-// audit finding 4). Same reasoning for an HCA deployment — it isn't a
-// registry either, so it gets its own ENSv2HCA row instead.
+// VerifiableFactory deploys registry, resolver, and HCA proxies. Resolver
+// events are covered by the addressless PermissionedResolver source, while
+// HCAs have their own entity; only registry implementations create dynamic
+// registry sources and ENSv2Registry rows.
 export function handleProxyDeployed(event: ProxyDeployed): void {
   let implementation = event.params.implementation;
   if (implementation.equals(getPermissionedResolverImplAddress())) {
     return;
   }
   if (implementation.equals(getStandaloneHCAImplAddress())) {
-    // ProxyDeployed only ever fires once for a given proxy address, but
-    // guard anyway rather than assume — same defensive pattern as
-    // getOrCreateRegistry below.
+    // Preserve idempotence if the same deployment event is ever replayed.
     if (ENSv2HCA.load(event.params.proxyAddress) == null) {
       let hca = new ENSv2HCA(event.params.proxyAddress);
       hca.implementation = implementation;
@@ -150,12 +132,8 @@ export function handleProxyDeployed(event: ProxyDeployed): void {
     event.block,
     implementation
   );
-  // Redundant with getOrCreateRegistry's own create-branch assignment on the
-  // path that actually matters (a real deployed registry's ProxyDeployed
-  // always indexes before anything else can reference it — see
-  // kindForAddress's header comment) — kept anyway as a defensive backstop
-  // in case that ordering assumption is ever wrong, so `implementation` is
-  // never silently dropped for an already-existing row.
+  // Also populate an existing row if another event referenced the address
+  // before ProxyDeployed was processed.
   registry.implementation = implementation;
   registry.save();
 }

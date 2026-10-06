@@ -328,7 +328,52 @@ test("order-independence: registry-then-registrar produces the same final state"
 
   assert.fieldEquals("ENSv2Registration", id, "duration", "31536000");
   assert.fieldEquals("ENSv2Registration", id, "slot", id);
+  // Registry expiry is canonical even though timestamp + duration differs.
+  assert.fieldEquals("ENSv2Registration", id, "expiryDate", "2000000000");
   assert.fieldEquals("ENSv2NameSlot", id, "label", "carol");
+});
+
+test("re-registration replaces the stable slot row's incarnation metadata", () => {
+  dataSourceMock.setNetwork("sepolia");
+
+  const PAYMENT_TOKEN = "0x3DfC8b53dAFa5eBbb071a8B97678Ab534Ed838D9";
+  const PAYMENT_TOKEN_2 = "0xBA11ebdB3f9a2c5946D8629517f06364E53A2E10";
+  let first = createNameRegisteredEvent(
+    slotToken(6),
+    "first",
+    BigInt.fromI32(100),
+    PAYMENT_TOKEN,
+    Bytes.fromI32(6),
+    BigInt.fromI32(10),
+    BigInt.fromI32(1)
+  );
+  first.block.timestamp = BigInt.fromI32(1000);
+  handleNameRegistered(first);
+
+  let second = createNameRegisteredEvent(
+    slotToken(6),
+    "second",
+    BigInt.fromI32(200),
+    PAYMENT_TOKEN_2,
+    Bytes.fromI32(7),
+    BigInt.fromI32(20),
+    BigInt.fromI32(2)
+  );
+  second.block.timestamp = BigInt.fromI32(2000);
+  handleNameRegistered(second);
+
+  let id = registrationIdFor(6);
+  assert.fieldEquals("ENSv2Registration", id, "registrationDate", "2000");
+  assert.fieldEquals("ENSv2Registration", id, "label", "second");
+  assert.fieldEquals("ENSv2Registration", id, "duration", "200");
+  assert.fieldEquals(
+    "ENSv2Registration",
+    id,
+    "paymentToken",
+    Address.fromString(PAYMENT_TOKEN_2).toHexString()
+  );
+  assert.fieldEquals("ENSv2Registration", id, "base", "20");
+  assert.fieldEquals("ENSv2Registration", id, "premium", "2");
 });
 
 test("handleNameRenewed refreshes an existing registration and is a no-op if none exists", () => {
@@ -339,28 +384,28 @@ test("handleNameRenewed refreshes an existing registration and is a no-op if non
   let referrer = Bytes.fromI32(4);
   let id = registrationIdFor(4);
 
-  handleNameRegistered(
-    createNameRegisteredEvent(
-      slotToken(4),
-      "dave",
-      BigInt.fromI32(31536000),
-      PAYMENT_TOKEN,
-      referrer,
-      BigInt.fromI32(0),
-      BigInt.fromI32(0)
-    )
+  let registered = createNameRegisteredEvent(
+    slotToken(4),
+    "dave",
+    BigInt.fromI32(31536000),
+    PAYMENT_TOKEN,
+    referrer,
+    BigInt.fromI32(0),
+    BigInt.fromI32(0)
   );
-  handleNameRenewed(
-    createNameRenewedEvent(
-      slotToken(4),
-      "dave",
-      BigInt.fromI32(63072000),
-      BigInt.fromI32(2100000000),
-      PAYMENT_TOKEN_2,
-      referrer,
-      BigInt.fromI32(999)
-    )
+  registered.block.timestamp = BigInt.fromI32(1234);
+  handleNameRegistered(registered);
+  let renewed = createNameRenewedEvent(
+    slotToken(4),
+    "dave",
+    BigInt.fromI32(63072000),
+    BigInt.fromI32(2100000000),
+    PAYMENT_TOKEN_2,
+    referrer,
+    BigInt.fromI32(999)
   );
+  renewed.block.timestamp = BigInt.fromI32(5678);
+  handleNameRenewed(renewed);
 
   assert.fieldEquals("ENSv2Registration", id, "duration", "63072000");
   assert.fieldEquals(
@@ -369,6 +414,8 @@ test("handleNameRenewed refreshes an existing registration and is a no-op if non
     "paymentToken",
     Address.fromString(PAYMENT_TOKEN_2).toHexString()
   );
+  assert.fieldEquals("ENSv2Registration", id, "expiryDate", "2100000000");
+  assert.fieldEquals("ENSv2Registration", id, "registrationDate", "1234");
 
   // No prior registration for this slot — renewal must not fabricate one.
   let neverRegisteredId = registrationIdFor(5);

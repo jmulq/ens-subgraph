@@ -327,8 +327,7 @@ const createExpiryUpdatedEvent = (
 //
 // Uses the REAL keccak256("eth") labelhash (not an arbitrary placeholder)
 // so the resulting namespace.baseNamehash is genuinely ETH_NODE — required
-// since getEthDomainId now filters on exactly that (audit finding 12 /
-// originally-closed issue #28, reopened): a placeholder labelhash would
+// since getEthDomainId filters on exactly that. A placeholder labelhash would
 // produce a namespace getEthDomainId correctly refuses to treat as "eth".
 function setupEthNamespace(): Bytes {
   let ethLabelHash = Bytes.fromByteArray(
@@ -645,7 +644,7 @@ test("handleExpiryUpdated on a REGISTERED .eth slot syncs raw Registration.expir
   assert.fieldEquals("Domain", domainId, "expiryDate", "2102419200");
 });
 
-test("handleExpiryUpdated on a RESERVED slot leaves legacy fields provably unchanged", () => {
+test("handleExpiryUpdated on a RESERVED slot leaves legacy fields unchanged", () => {
   dataSourceMock.setNetwork("sepolia");
   let ethBaseNamehash = setupEthNamespace();
 
